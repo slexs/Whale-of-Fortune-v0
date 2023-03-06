@@ -2,7 +2,7 @@
 Initial attempt at creating a Smart Contract for the Whale of Fortune game on Kujira 
 
 # Description 
-The contract defines a simple betting game called "Whale of Fortune". In this game, players place bets on a number between 0 and 9, and a random number is generated using a trusted third-party oracle service called an "entropy beacon". If the player's chosen number matches one of the digits in the randomly generated number, they win the game and receive a payout.
+The contract defines a simple betting game called "Whale of Fortune". In this game, players place bets on a number between 0 and 6, and a random number is generated using a trusted third-party oracle service called an "entropy beacon". If the player's chosen number matches one of the digits in the randomly generated number, they win the game and receive a payout.
 
 The contract consists of four main parts: the msg module, which defines the different messages that can be sent to the contract; the state module, which defines the state of the contract and the Game struct; the helpers module, which provides a helper function for interacting with the contract; and the contract module, which defines the contract's business logic.
 

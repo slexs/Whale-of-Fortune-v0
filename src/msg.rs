@@ -1,13 +1,13 @@
+use crate::state::RuleSet;
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Uint128};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
 use kujira::denom::Denom;
-use crate::state::RuleSet;
-
 
 #[cw_serde]
 pub struct InstantiateMsg {
     pub entropy_beacon_addr: Addr,
+    pub owner_addr: Addr,
     pub token: Denom,
     pub play_amount: Uint128,
     pub win_amount: Uint128,
@@ -23,9 +23,9 @@ pub struct EntropyCallbackData {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    Spin { bet_amount : Uint128}, 
+    Spin { bet_amount: Uint128 },
     Pull {},
-    ReceiveEntropy(EntropyCallbackMsg),
+    ReceiveEntropy(EntropyCallbackMsg), 
 }
 
 #[cw_serde]
@@ -44,9 +44,9 @@ pub struct GameResponse {
 }
 
 impl ExecuteMsg {
-    pub fn calculate_payout(bet_amount: Uint128, result: u8,  rule_set: RuleSet) -> Uint128 {
+    pub fn calculate_payout(bet_amount: Uint128, result: u8, rule_set: RuleSet) -> Uint128 {
         match result {
-            0 => bet_amount * rule_set.zero, 
+            0 => bet_amount * rule_set.zero,
             1 => bet_amount * rule_set.one,
             2 => bet_amount * rule_set.two,
             3 => bet_amount * rule_set.three,
@@ -56,11 +56,7 @@ impl ExecuteMsg {
             _ => Uint128::zero(),
         }
     }
-
-    
 }
-
-
 
 #[cw_serde]
 pub struct MigrateMsg {
