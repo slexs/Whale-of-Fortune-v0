@@ -21,8 +21,17 @@ pub enum ContractError {
     InvalidToken {},
 
     #[error("Invalid bet")]
-    InvalidBet {}, 
+    InvalidBet {},
 
     #[error("Already paid out")]
-    AlreadyPaidOut {}, 
+    AlreadyPaidOut {},
+    
+    #[error("Invalid bet number")]
+    InvalidBetNumber {},
+
+    #[error("Invalid bet amount")]
+    InvalidBetAmount {},
+
+    #[error("More than one denom sent")]
+    InvalidCoin{}
 }

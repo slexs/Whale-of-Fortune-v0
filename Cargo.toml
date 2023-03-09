@@ -26,6 +26,30 @@ panic = 'abort'
 incremental = false
 overflow-checks = true
 
+[profile.release.package.cw20-atomic-swap]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.cw20-bonding]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.cw20-escrow]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.cw20-merkle-airdrop]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.cw20-staking]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.cw20-streams]
+codegen-units = 1
+incremental = false
+
 [features]
 # for more explicit tests, cargo test --features=backtraces
 backtraces = ["cosmwasm-std/backtraces"]
@@ -56,6 +80,14 @@ digest = { version = "0.10.6", features = ["std"] }
 num-bigint = "0.4.3"
 num-traits = "0.2.14"
 sha3 = "0.10.6" 
+cosmwasm-simulate = "0.13.6"
+cw-multi-test = "0.16.2"
+cw20 = "1.0.1"
+cw20-base = "1.0.1"
+wasm = "0.0.0"
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 cw-multi-test = "0.16.2"
+
+

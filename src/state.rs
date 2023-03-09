@@ -1,7 +1,7 @@
 use cosmwasm_schema::cw_serde;
 use kujira::denom::Denom;
 
-use cosmwasm_std::{Addr, Uint128, Coin};
+use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::{Item, Map};
 
 #[cw_serde]
@@ -10,7 +10,7 @@ pub struct State {
     pub entropy_beacon_addr: Addr,
     pub owner_addr: Addr,
     pub token: Denom,
-    pub house_bankroll: Coin, 
+    pub house_bankroll: Coin,
     pub play_amount: Uint128,
     pub win_amount: Uint128,
     pub fee_amount: Uint128,
@@ -25,7 +25,7 @@ pub struct Game {
     pub payout: Uint128,
     pub result: Option<Vec<u8>>,
     pub played: bool,
-    pub win: Option<bool>, 
+    pub win: Option<bool>,
 }
 
 impl Game {
