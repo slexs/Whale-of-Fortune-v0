@@ -6,10 +6,7 @@ use cosmwasm_std::{
     Env, MessageInfo, Response, StdResult, //SubMsg, SubMsgExecutionResponse, SubMsgResponse,
     Uint128,
 };
-
-// use cw20::{Cw20Coin, Cw20Contract, Cw20ExecuteMsg};
-// use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
-// use cw_multi_test::{App, Contract, ContractWrapper, Executor};
+use sha2::{Digest, Sha256}; 
 
 use cw_utils::one_coin;
 use entropy_beacon_cosmos::{/*beacon,*/ EntropyCallbackMsg, EntropyRequest};
@@ -24,12 +21,6 @@ use crate::msg::{
              CreateMsg, DetailsResponse, ExecuteMsgEscrow as Cw20ExecuteMsgEscrow, */
 };
 use crate::state::{Game, RuleSet, State, GAME, IDX, STATE};
-
-use num_bigint::BigUint;
-use num_traits::cast::ToPrimitive;
-// use rand::RngCore;
-use rand::{rngs::OsRng, RngCore};
-use sha3::{Digest, Sha3_512};
 
 /// Our [`InstantiateMsg`] contains the address of the entropy beacon contract.
 /// We save this address in the contract state.
@@ -468,26 +459,15 @@ pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> 
 }
 
 pub fn get_outcome_from_entropy(entropy: &[u8]) -> Vec<u8> {
-    // let entropy_array: [u8; 64] = entropy.try_into().unwrap();
-
-    // Convert 64-byte entropy to 512-bit integer
-    let mut rng = rand::rngs::OsRng {};
-    let mut seed = [0u8; 64];
-    rng.fill_bytes(&mut seed);
-    let mut hasher = Sha3_512::new();
-    hasher.update(&seed);
+    // Hash the input entropy using SHA256
+    let mut hasher = Sha256::new();
     hasher.update(entropy);
-    let result = hasher.finalize();
+    let hash_result = hasher.finalize();
 
-    // Divide result by 7 and take the remainder to get outcome (0-6)
-    let num = BigUint::from_bytes_be(&result);
-    let outcome = (num % BigUint::from(7u32)).to_u8().unwrap();
+    // Use the last byte of the hash as the random number
+    let random_byte = hash_result[hash_result.len() - 1];
+
+    // Map the random byte to a number between 0 and 6
+    let outcome = random_byte % 7; 
     vec![outcome]
-}
-
-pub fn generate_entropy_test() -> [u8; 64] {
-    let mut entropy = [0u8; 64];
-    let mut rng = OsRng;
-    rng.fill_bytes(&mut entropy);
-    entropy
 }
