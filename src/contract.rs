@@ -144,7 +144,7 @@ pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response>
     Ok(Response::new())
 }
 
-pub fn execute_validate_bet(deps: DepsMut, info: MessageInfo, player_bet_amount: Uint128, player_bet_number: u8
+pub fn execute_validate_bet(deps: &DepsMut, info: MessageInfo, player_bet_amount: Uint128, player_bet_number: u8
 ) -> bool {
 
     let state = STATE.load(deps.storage).unwrap();
@@ -211,11 +211,11 @@ pub fn execute_spin(
         let coin = one_coin(&info).unwrap(); // Check that only one denom was sent
 
         // Check that the denom is the same as the token in the state
-        if Denom::from(coin.denom) != state.token {
+        if Denom::from(coin.denom.clone()) != state.token {
             return Err(ContractError::InvalidToken {});
         }
         // Check that the amount is the same as the play_amount in the state
-        if coin.amount != player_bet_amount || player_bet_amount < Uint128::from(1u128) {
+        if coin.amount.clone() != player_bet_amount || player_bet_amount < Uint128::from(1u128) {
             return Err(ContractError::InsufficientFunds {});
         }
         // Get the current game index
@@ -223,6 +223,12 @@ pub fn execute_spin(
 
         // Check if there is a game at the current index
         let game = GAME.may_load(deps.storage, idx.u128())?;
+
+        // Collect the players bet and send it to the owner contract address 
+        let send_msg = BankMsg::Send {
+            to_address: state.owner_addr.to_string(),
+            amount: vec![coin],
+        };
 
         // Check if the game has been played
         match game {
@@ -253,20 +259,16 @@ pub fn execute_spin(
                     let payout_msg = BankMsg::Send {
                         to_address: game.player.to_string(),
                         amount: vec![payout_coin],
-                    };
-
-                    // let payout_msg = cw20::Cw20ExecuteMsg::Transfer {
-                    //     recipient: game.player.to_string(),
-                    //     amount: calculated_payout,
-                    // };
-                    
+                    };                    
 
                     // generate the response
                     let response = Response::new()
                         .add_attribute("game", idx.u128().to_string())
                         .add_attribute("player", game.player.clone())
                         .add_attribute("result", "win")
-                        .add_attribute("payout", calculated_payout.to_string());
+                        .add_attribute("payout", calculated_payout.to_string())
+                        .add_message(send_msg.clone()) // Add the collection message to the response //TODO: Can i add two messages to the response? 
+                        .add_message(payout_msg.clone()); // Add the payout message to the response
                         
 
                     // Increment gameID
@@ -337,8 +339,6 @@ pub fn execute_recieve_entropy(
         return Err(ContractError::Unauthorized {});
     }
 
-    let test = cw_utils::must_pay(info, denom)
-
     //* IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
     if data.requester != env.contract.address {
         return Err(ContractError::Unauthorized {});
@@ -376,8 +376,8 @@ pub fn execute_entropy_beacon_pull(
 
     // Check that players bet amount is <= 10% of the house bankroll amount 
     if !execute_validate_bet(
-    deps, 
-    info, 
+    &deps, 
+    info.clone(), 
     _player_bet_amount, 
     player_bet_number) {
     return Err(ContractError::InvalidBet {});
@@ -439,7 +439,6 @@ pub fn execute_entropy_beacon_pull(
         .add_attribute("player", game.player)
         .add_messages(msgs))
 }
-
 
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {

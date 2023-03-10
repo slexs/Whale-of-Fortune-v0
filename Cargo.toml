@@ -90,4 +90,8 @@ getrandom = { version = "0.2", features = ["js"] }
 [dev-dependencies]
 cw-multi-test = "0.16.2"
 
+[alias]
+wasm = "build --target wasm32-unknown-unknown --release --lib"
+wasm-debug = "build --target wasm32-unknown-unknown --lib"
+schema = "run schema"
 

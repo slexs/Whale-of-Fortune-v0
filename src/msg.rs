@@ -4,6 +4,7 @@ use cosmwasm_std::{Addr, Api, Coin, StdResult, Uint128};
 use cw20::{Cw20Coin, Cw20ReceiveMsg};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
 use kujira::denom::Denom;
+use serde::{Deserialize, Serialize};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -24,16 +25,17 @@ pub struct EntropyCallbackData {
 
 #[cw_serde]
 pub enum ExecuteMsg {
+    Pull {},
+    ReceiveEntropy(EntropyCallbackMsg),
+    Spin {}, 
     // ValidateBet {
     //     player_bet_amount: Uint128,
     //     player_bet_number: u8,
     // },
-    Spin {
+    
         // player_bet_amount: Uint128,
         // player_bet_number: u8,
-    },
-    Pull {},
-    ReceiveEntropy(EntropyCallbackMsg),
+    // },
 }
 
 #[cw_serde]
