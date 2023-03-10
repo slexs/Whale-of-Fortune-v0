@@ -1,6 +1,6 @@
 use cosmwasm_std::StdError;
 use cw_utils::PaymentError;
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]

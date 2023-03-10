@@ -1,21 +1,21 @@
 // use cosmwasm_schema::cw_serde;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{
-    coins, from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Empty,
-    Env, MessageInfo, Response, StdResult, SubMsg, SubMsgExecutionResponse, SubMsgResponse,
+use cosmwasm_std::{ 
+    /*coins,*/ from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, //Empty,
+    Env, MessageInfo, Response, StdResult, //SubMsg, SubMsgExecutionResponse, SubMsgResponse,
     Uint128,
 };
 
-use cw20::{Cw20Coin, Cw20Contract, Cw20ExecuteMsg};
-use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
-use cw_multi_test::{App, Contract, ContractWrapper, Executor};
+// use cw20::{Cw20Coin, Cw20Contract, Cw20ExecuteMsg};
+// use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
+// use cw_multi_test::{App, Contract, ContractWrapper, Executor};
 
 use cw_utils::one_coin;
-use entropy_beacon_cosmos::{beacon, EntropyCallbackMsg, EntropyRequest};
+use entropy_beacon_cosmos::{/*beacon,*/ EntropyCallbackMsg, EntropyRequest};
 use kujira::denom::Denom;
 
-use entropy_beacon_cosmos::beacon::CalculateFeeQuery; // <--- NEW ENTROPY STUFF
+// use entropy_beacon_cosmos::beacon::CalculateFeeQuery; // <--- NEW ENTROPY STUFF
 
 use crate::error::ContractError;
 use crate::msg::{
@@ -86,37 +86,50 @@ pub fn execute(
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-    player_bet_amount: Uint128,
-    player_bet_number: u8,
 ) -> Result<Response, ContractError> {
     match msg.clone() {
 
         // #STEP 1: 
         // Validate player's bet amount and number
         // and handle requesting entropy from the beacon.
-        ExecuteMsg::Pull {} => {
-            execute_entropy_beacon_pull(deps, env, info, player_bet_amount, player_bet_number)
-        }, 
+        ExecuteMsg::Pull {
+            player_bet_amount, 
+            player_bet_number} => {
+                execute_entropy_beacon_pull(
+                    deps, 
+                    env, 
+                    info, 
+                    player_bet_amount, 
+                    player_bet_number
+                )
+            }, 
 
         // #STEP 2: 
         // Handle receiving entropy from the beacon.
-        ExecuteMsg::ReceiveEntropy(data) => { execute_recieve_entropy(deps, env, info, data) },
+        ExecuteMsg::ReceiveEntropy(
+            data) => { 
+                execute_recieve_entropy(
+                    deps, 
+                    env, 
+                    info, 
+                    data
+                )
+            },
 
         // #STEP 3:
         // Handle player placing a bet and spinning the wheel
         ExecuteMsg::Spin {
-            // player_bet_amount: Uint128,
-            // player_bet_number: u8,
-        } => { execute_spin(deps, env, info, player_bet_amount, player_bet_number) },
+            player_bet_amount,
+            player_bet_number} => { 
+                execute_spin(
+                    deps, 
+                    env, 
+                    info, 
+                    player_bet_amount, 
+                    player_bet_number
+                ) 
+            },
 
-        /*
-        // Check that the players bet is valid
-        // TODO: do validation inside of execute_spin? 
-        ExecuteMsg::ValidateBet {
-            player_bet_amount: Uint128,
-            player_bet_number: u8,
-        } => execute_validate_bet(deps, info, player_bet_amount, player_bet_number),
-        */
     }
 }
 
