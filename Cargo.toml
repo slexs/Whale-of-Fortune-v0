@@ -72,7 +72,7 @@ cw-utils = "1.0.1"
 cw2 = "1.0.1"
 entropy_beacon_cosmos = "2.0.4"
 kujira = "0.7.25"
-rand = "0.8.5"
+
 schemars = "0.8.10"
 serde = { version = "1.0.145", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.31" }
@@ -81,14 +81,17 @@ num-bigint = "0.4.3"
 num-traits = "0.2.14"
 sha3 = "0.10.6" 
 cosmwasm-simulate = "0.13.6"
-# cw-multi-test = "0.16.2"
 cw20 = "1.0.1"
 cw20-base = "1.0.1"
 wasm = "0.0.0"
-getrandom = { version = "0.2", features = ["js"] }
+sha2 = "0.10.6"
+
 
 [dev-dependencies]
 cw-multi-test = "0.16.2"
+rand = "0.8.5"
+getrandom = { version = "0.2", features = ["js"] }
+cosmwasm-simulate = "0.13.6"
 
 [alias]
 wasm = "build --target wasm32-unknown-unknown --release --lib"
