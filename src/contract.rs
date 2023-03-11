@@ -6,6 +6,7 @@ use cosmwasm_std::{
     Env, MessageInfo, Response, StdResult, //SubMsg, SubMsgExecutionResponse, SubMsgResponse,
     Uint128,
 };
+use cw20_base::contract;
 use sha2::{Digest, Sha256}; 
 
 use cw_utils::one_coin;
@@ -37,7 +38,7 @@ pub fn instantiate(
         entropy_beacon_addr: Addr::unchecked("kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"),
         owner_addr: info.sender,
         house_bankroll: Coin {
-            denom: "USK".to_string(),
+            denom: "ukuji".to_string(),
             amount: Uint128::zero(),
         },
         token: Denom::from("ukuji"),
@@ -391,6 +392,8 @@ pub fn execute_entropy_beacon_pull(
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
 
+    let contract_addr = env.contract.address.to_string();
+
     // Check that players bet amount is <= 10% of the house bankroll amount 
     if !execute_validate_bet(
     &deps, 
@@ -450,11 +453,18 @@ pub fn execute_entropy_beacon_pull(
         }))
     };
 
+    // Transfer player bet amount to the contract address 
+    let player_deposit_msg: BankMsg = BankMsg::Send {
+        to_address: contract_addr,
+        amount: state.token.coins(&state.play_amount),
+    };
+
     // Response to the contract caller
     Ok(Response::new()
         .add_attribute("game", idx)
         .add_attribute("player", game.player)
-        .add_messages(msgs))
+        .add_messages(msgs)
+        .add_message(player_deposit_msg))
 }
 
 

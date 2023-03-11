@@ -25,8 +25,6 @@ pub struct EntropyCallbackData {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-
-
     Pull {
         player_bet_amount: Uint128, 
         player_bet_number: u8,
