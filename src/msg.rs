@@ -3,18 +3,18 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, /*Api, Coin, StdResult,*/ Uint128};
 // use cw20::{Cw20Coin, Cw20ReceiveMsg};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
-use kujira::denom::Denom;
+// use kujira::denom::Denom;
 // use serde::{Deserialize, Serialize};
 
 #[cw_serde]
 pub struct InstantiateMsg {
-    pub entropy_beacon_addr: Addr,
-    pub owner_addr: Addr,
-    pub token: Denom,
-    pub play_amount: Uint128,
-    pub win_amount: Uint128,
-    pub fee_amount: Uint128,
-    pub rule_set: RuleSet,
+    // pub entropy_beacon_addr: Addr,
+    // pub owner_addr: Addr,
+    // pub token: Denom,
+    // pub play_amount: Uint128,
+    // pub win_amount: Uint128,
+    // pub fee_amount: Uint128,
+    // pub rule_set: RuleSet,
 }
 
 #[cw_serde]

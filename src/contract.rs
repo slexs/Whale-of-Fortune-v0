@@ -28,29 +28,42 @@ use crate::state::{Game, RuleSet, State, GAME, IDX, STATE};
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
-    _info: MessageInfo,
-    msg: InstantiateMsg,
+    info: MessageInfo,
+    _msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    let mut state = State {
-        entropy_beacon_addr: msg.entropy_beacon_addr,
-        owner_addr: Addr::unchecked("empty"),
+
+
+    let state = State {
+        entropy_beacon_addr: Addr::unchecked("kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"),
+        owner_addr: info.sender,
         house_bankroll: Coin {
             denom: "USK".to_string(),
             amount: Uint128::zero(),
         },
-        token: msg.token,
-        play_amount: msg.play_amount,
-        win_amount: msg.win_amount,
-        fee_amount: msg.fee_amount,
-        rule_set: msg.rule_set,
+        token: Denom::from("ukuji"),
+        play_amount: Uint128::zero(),
+        win_amount: Uint128::zero(),
+        fee_amount: Uint128::zero(),
+        rule_set: RuleSet{
+            zero: Uint128::from(0u128),
+            one: Uint128::from(1u128),
+            two: Uint128::from(2u128),
+            three: Uint128::from(3u128),
+            four: Uint128::from(4u128),
+            five: Uint128::from(5u128),
+            six: Uint128::from(6u128),
+        },
     };
 
-    state.owner_addr = Addr::unchecked("owner");
+
+
     let _validated_owner_address: Addr = deps.api.addr_validate(&state.owner_addr.to_string())?;
 
     // Harpoon-4, Kujira Testnet
-    state.entropy_beacon_addr =
-        Addr::unchecked("kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u");
+    // state.entropy_beacon_addr =
+    //     Addr::unchecked("kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u");
+
+    // let _validated_beacon_addr = deps.api.addr_validate(state.entropy_beacon_addr.as_str())?; 
     
     // Kaiyo-1, Mainnet
     //state.entropy_beacon_addr =
