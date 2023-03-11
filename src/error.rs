@@ -33,5 +33,11 @@ pub enum ContractError {
     InvalidBetAmount {},
 
     #[error("More than one denom sent")]
-    InvalidCoin{}
+    InvalidCoin{}, 
+
+    #[error("Callback was not called by beacon, but by someone else")]
+    InvalidEntropyCallback {},
+
+    #[error("Original requester for entropy is not trusted (must be the contract itself)")]
+    InvalidEntropyRequester {},
 }

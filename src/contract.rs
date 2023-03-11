@@ -1,12 +1,8 @@
-// use cosmwasm_schema::cw_serde;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{ 
-    /*coins,*/ from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, //Empty,
-    Env, MessageInfo, Response, StdResult, //SubMsg, SubMsgExecutionResponse, SubMsgResponse,
-    Uint128,
-};
-use cw20_base::contract;
+    from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut,
+    Env, MessageInfo, Response, StdResult, Uint128 };
 use sha2::{Digest, Sha256}; 
 
 use cw_utils::one_coin;
@@ -17,10 +13,7 @@ use kujira::denom::Denom;
 
 use crate::error::ContractError;
 use crate::msg::{
-    EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg,
-    QueryMsg, /* ReceiveMsg,
-             CreateMsg, DetailsResponse, ExecuteMsgEscrow as Cw20ExecuteMsgEscrow, */
-};
+    EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg };
 use crate::state::{Game, RuleSet, State, GAME, IDX, STATE};
 
 /// Our [`InstantiateMsg`] contains the address of the entropy beacon contract.
@@ -56,10 +49,6 @@ pub fn instantiate(
         },
     };
 
-
-
-    let _validated_owner_address: Addr = deps.api.addr_validate(&state.owner_addr.to_string())?;
-
     // Harpoon-4, Kujira Testnet
     // state.entropy_beacon_addr =
     //     Addr::unchecked("kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u");
@@ -70,12 +59,17 @@ pub fn instantiate(
     //state.entropy_beacon_addr =
     //    Addr::unchecked("kujira1x623ehq3gqx9m9t8asyd9cgehf32gy94mhsw8l99cj3l2nvda2fqrjwqy5"); 
     
+    // Validate the Beacon address 
     let _validated_beacon_address: Addr = deps
         .api
         .addr_validate(&state.entropy_beacon_addr.to_string())?;
 
+    // Validate the owner address
+    let _validated_owner_address: Addr = deps.api.addr_validate(&state.owner_addr.to_string())?;
+
     STATE.save(deps.storage, &state)?;
     IDX.save(deps.storage, &Uint128::zero())?;
+
     Ok(Response::new()
     .add_attribute("method", "instantiate")
     .add_attribute("owner", state.owner_addr.to_string())
@@ -167,50 +161,36 @@ pub fn execute_validate_bet(deps: &DepsMut, info: MessageInfo, player_bet_amount
 
     let state = STATE.load(deps.storage).unwrap();
 
-    //TODO: How can i ensure that we avoid floating point numbers in this calculation?
-    // Trying this: rounding up to nearest integer with checked_div
-    if player_bet_amount > state.house_bankroll.amount.checked_div(Uint128::new(10)).unwrap() {
-        return false
-        // return Err(ContractError::InvalidBetAmount {});
-    }
-
     // Check that the players bet number is between 0 and 6
     if player_bet_number > 6 {
         return false
-        // return Err(ContractError::InvalidBetNumber {});
     }
     
     // Check that only one denom was sent
-    // let coin = one_coin(&info).unwrap(); 
     let coin = match one_coin(&info) {
         Ok(coin) => coin,
-        Err(_) => return false //return Err(ContractError::InvalidCoin {}),
+        Err(_) => return false
     }; 
 
     // Check that the denom is the same as the token in the state
     let state = STATE.load(deps.storage).unwrap();
     if Denom::from(coin.denom) != state.token {
         return false
-        // return Err(ContractError::InvalidToken {});
     }
 
     // Check that the amount is the same as the play_amount in the state
     if coin.amount != player_bet_amount || player_bet_amount < Uint128::from(1u128) {
         return false
-        // return Err(ContractError::InsufficientFunds {});
     }
 
     // Check that the player_bet_number is between 0 and 6
     if player_bet_number > 6 {
         return false
-        // return Err(ContractError::InvalidBetNumber {});
     }
 
     // Check that the player_bet_amount does not exceed 10% of house bankroll
-    let house_bankroll = state.house_bankroll.amount;
-    if player_bet_amount > house_bankroll / Uint128::from(10u128) {
+    if player_bet_amount > state.house_bankroll.amount.checked_div(Uint128::new(10)).unwrap() {
         return false
-        // return Err(ContractError::InvalidBetAmount {});
     }
 
     true 
@@ -288,10 +268,6 @@ pub fn execute_spin(
                         .add_message(send_msg.clone()) // Add the collection message to the response //TODO: Can i add two messages to the response? 
                         .add_message(payout_msg.clone()); // Add the payout message to the response
                         
-
-                    // Increment gameID
-                    IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
-
                     // Player has won, update game state
                     game.played = true;
                     game.bet = player_bet_number;
@@ -299,10 +275,12 @@ pub fn execute_spin(
                     game.result = Some(outcome);
                     GAME.save(deps.storage, idx.u128(), &game)?;
 
+                    // Increment gameID for the next game 
+                    IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+
                     Ok(response.add_message(payout_msg).into())
                 } else {
-                    // Increment gameID
-                    IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+                    
 
                     // Player has lost, update game state
                     game.played = true;
@@ -311,6 +289,10 @@ pub fn execute_spin(
                     game.payout = Uint128::zero();
                     game.result = Some(outcome);
                     GAME.save(deps.storage, idx.u128(), &game)?;
+
+                    // Increment gameID for the next game 
+                    IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+
                     return Ok(Response::new()
                         .add_attribute("game", idx.u128().to_string())
                         .add_attribute("player", game.player.to_string())
@@ -354,12 +336,12 @@ pub fn execute_recieve_entropy(
 
     // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
     if info.sender != beacon_addr {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::InvalidEntropyCallback {});
     }
 
     //* IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
     if data.requester != env.contract.address {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::InvalidEntropyRequester {});
     }
 
     // The callback data has 64 bytes of entropy, in a Vec<u8>.
@@ -392,7 +374,7 @@ pub fn execute_entropy_beacon_pull(
 ) -> Result<Response, ContractError> {
     let state = STATE.load(deps.storage)?;
 
-    let contract_addr = env.contract.address.to_string();
+   
 
     // Check that players bet amount is <= 10% of the house bankroll amount 
     if !execute_validate_bet(
@@ -433,7 +415,7 @@ pub fn execute_entropy_beacon_pull(
     // Create a request for entropy from the Beacon contract 
     let mut msgs = vec![EntropyRequest {
         callback_gas_limit: 100_000u64,
-        callback_address: env.contract.address,
+        callback_address: env.contract.address.clone(),
         funds: vec![Coin {
             denom: state.token.to_string(),
             amount: state.play_amount,
@@ -453,9 +435,9 @@ pub fn execute_entropy_beacon_pull(
         }))
     };
 
-    // Transfer player bet amount to the contract address 
+    // Transfer player bet amount to the contract address
     let player_deposit_msg: BankMsg = BankMsg::Send {
-        to_address: contract_addr,
+        to_address: env.contract.address.to_string(),
         amount: state.token.coins(&state.play_amount),
     };
 
