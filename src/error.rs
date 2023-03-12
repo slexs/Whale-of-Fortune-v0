@@ -25,7 +25,7 @@ pub enum ContractError {
 
     #[error("Already paid out")]
     AlreadyPaidOut {},
-    
+
     #[error("Invalid bet number")]
     InvalidBetNumber {},
 
@@ -33,7 +33,7 @@ pub enum ContractError {
     InvalidBetAmount {},
 
     #[error("More than one denom sent")]
-    InvalidCoin{}, 
+    InvalidCoin {},
 
     #[error("Callback was not called by beacon, but by someone else")]
     InvalidEntropyCallback {},

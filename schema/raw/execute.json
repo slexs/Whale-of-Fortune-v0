@@ -10,6 +10,16 @@
       "properties": {
         "pull": {
           "type": "object",
+          "required": [
+            "bet_number"
+          ],
+          "properties": {
+            "bet_number": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            }
+          },
           "additionalProperties": false
         }
       },
@@ -35,6 +45,16 @@
       "properties": {
         "spin": {
           "type": "object",
+          "required": [
+            "bet_number"
+          ],
+          "properties": {
+            "bet_number": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            }
+          },
           "additionalProperties": false
         }
       },
