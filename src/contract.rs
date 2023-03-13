@@ -56,13 +56,13 @@ pub fn instantiate(
         token: Denom::from("ukuji"), // Init token to ukuji
         fee_amount: Uint128::zero(),
         rule_set: RuleSet { // Payout ratios
-            zero: Uint128::from(0u128), // 1:1
-            one: Uint128::from(1u128), // 3:1
-            two: Uint128::from(2u128), // 5:1
-            three: Uint128::from(3u128), // 10:1
-            four: Uint128::from(4u128), // 20:1
-            five: Uint128::from(5u128), // 45:1
-            six: Uint128::from(6u128), // 45:1 
+            zero: Uint128::from(1u128), // 1:1
+            one: Uint128::from(3u128), // 3:1
+            two: Uint128::from(5u128), // 5:1
+            three: Uint128::from(10u128), // 10:1
+            four: Uint128::from(20u128), // 20:1
+            five: Uint128::from(45u128), // 45:1
+            six: Uint128::from(45u128), // 45:1 
         },
     };
 
@@ -302,6 +302,7 @@ pub fn execute_recieve_entropy(
 ) -> Result<Response, ContractError> {
     // Load the game state from the contract
     let config = CONFIG.load(deps.storage)?;
+    let idx = IDX.load(deps.storage)?;
 
     // Get the address of the entropy beacon
     let beacon_addr = config.entropy_beacon_addr;
@@ -322,18 +323,21 @@ pub fn execute_recieve_entropy(
     // We can parse out our custom callback data from the message.
     let callback_data = data.msg;
     let callback_data: EntropyCallbackData = from_binary(&callback_data)?;
-    let mut game = GAME.load(deps.storage, callback_data.game.u128())?;
+
+    // Load game state with current game index
+    let mut game = GAME.load(deps.storage, idx.u128())?;
 
     // gets a result (0-6) from the entropy, and sets game state to played
     game.result = Some(get_outcome_from_entropy(&entropy));
     game.played = true;
 
-    GAME.save(deps.storage, callback_data.game.u128(), &game)?;
+    GAME.save(deps.storage, idx.u128(), &game)?;
 
     return Ok(Response::new()
         .add_attribute("game", callback_data.game)
         .add_attribute("player", game.player)
-        .add_attribute("result", "pending"));
+        .add_attribute("result", "pending")
+        .add_attribute("callbackdata.game", callback_data.game.to_string())); 
 }
 
 pub fn execute_entropy_beacon_pull(
@@ -342,6 +346,7 @@ pub fn execute_entropy_beacon_pull(
     info: MessageInfo,
     player_bet_number: Uint128,
 ) -> Result<Response, ContractError> {
+    // Load the game config 
     let config = CONFIG.load(deps.storage)?;
 
     // Check that players bet amount is <= 10% of house bankroll, bet num [0, 6], denom etc
