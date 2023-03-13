@@ -189,6 +189,9 @@ pub fn execute_validate_bet(
         .unwrap() {
         return false;
     }
+    let game = GAME.load(deps.storage, 0u128).unwrap();
+    game.bet_size = coin.amount; 
+    GAME.save(deps.storage, 0u128, &game).unwrap(); 
 
     return true;
 }
@@ -353,7 +356,7 @@ pub fn execute_entropy_beacon_pull(
     let config = CONFIG.load(deps.storage)?;
 
     // Check that players bet amount is <= 10% of house bankroll, bet num [0, 6], denom etc
-    if !execute_validate_bet(
+    if let bet_validated = !execute_validate_bet(
         &deps, 
         &env, 
         info.clone(), 
@@ -396,12 +399,7 @@ pub fn execute_entropy_beacon_pull(
             original_sender: info.sender,
             game: idx,
         },
-    }
-    .into_cosmos(config.entropy_beacon_addr)?];
-
-    // let callback_msg_idx = msgs.
-
-
+    }.into_cosmos(config.entropy_beacon_addr)?];
 
     // If there is a fee, send it to the fee address
     if !config.fee_amount.is_zero() {
@@ -419,10 +417,10 @@ pub fn execute_entropy_beacon_pull(
 
     // Response to the contract caller
     Ok(Response::new()
-        .add_attribute("game", idx)
-        .add_attribute("player", game.player)
-        // .add_message(msgs)
-        .add_message(player_deposit_msg)) 
+    .add_attribute("game", idx)
+    .add_attribute("player", game.player)
+    .add_messages(msgs))
+
 }
 
 // Calculate the payout amount for a given bet
