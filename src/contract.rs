@@ -10,7 +10,7 @@ use kujira::querier;
 use sha2::{Digest, Sha256};
 
 use cw_utils::one_coin;
-use entropy_beacon_cosmos::{/*beacon,*/ EntropyCallbackMsg, EntropyRequest};
+use entropy_beacon_cosmos::{CalculateFeeQuery, EntropyCallbackMsg, EntropyRequest};
 use kujira::denom::Denom;
 
 // use entropy_beacon_cosmos::beacon::CalculateFeeQuery; // <--- NEW ENTROPY STUFF
@@ -114,11 +114,13 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Game { idx } => {
             let game = GAME.load(deps.storage, idx.u128())?;
+            let bytes = game.bet_size.to_be_bytes();
+
             to_binary(&GameResponse {
                 idx,
                 player: game.player.clone(),
                 result: game.result.as_ref().map(|x| x.clone()),
-                win: game.win(game.bet),
+                win: game.win(game.bet_size),
             })
         }
     }
@@ -139,7 +141,7 @@ pub fn execute_validate_bet(
     env: &Env,
     info: MessageInfo,
     player_bet_amount: Uint128,
-    player_bet_number: u8,
+    player_bet_number: Uint128,
 ) -> bool {
 
     let mut config = CONFIG.load(deps.storage).unwrap();
@@ -157,7 +159,7 @@ pub fn execute_validate_bet(
     config.house_bankroll = bankroll_balance.clone(); 
 
     // Check that the players bet number is between 0 and 6
-    if player_bet_number > 6 {
+    if player_bet_number > Uint128::new(6) {
         return false;
     }
 
@@ -188,9 +190,6 @@ pub fn execute_validate_bet(
         return false;
     }
 
-    // Add the players bet size to the config
-    config.play_amount = coin.amount; 
-
     return true;
 }
 
@@ -198,7 +197,7 @@ pub fn execute_spin(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    bet_number: u8,
+    bet_number: Uint128,
 ) -> Result<Response, ContractError> {
     {
         // Load the game state
@@ -349,8 +348,7 @@ pub fn execute_entropy_beacon_pull(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
-    // msg: ExecuteMsg,
-    player_bet_number: u8,
+    player_bet_number: Uint128,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
 
@@ -382,17 +380,28 @@ pub fn execute_entropy_beacon_pull(
     // Save the game state to the contract
     GAME.save(deps.storage, idx.u128(), &game)?;
 
+    let callback_gas_limit = 100_000u64;
+
+    let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
+
     // Create a request for entropy from the Beacon contract
     let mut msgs = vec![EntropyRequest {
-        callback_gas_limit: 100_000u64,
+        callback_gas_limit, 
         callback_address: env.contract.address.clone(),
-        funds: vec![],
+        funds: vec![Coin {
+            denom: config.token.to_string(),
+            amount: Uint128::from(beacon_fee),
+        }],
         callback_msg: EntropyCallbackData {
             original_sender: info.sender,
             game: idx,
         },
     }
     .into_cosmos(config.entropy_beacon_addr)?];
+
+    // let callback_msg_idx = msgs.
+
+
 
     // If there is a fee, send it to the fee address
     if !config.fee_amount.is_zero() {
@@ -412,6 +421,7 @@ pub fn execute_entropy_beacon_pull(
     Ok(Response::new()
         .add_attribute("game", idx)
         .add_attribute("player", game.player)
+        // .add_message(msgs)
         .add_message(player_deposit_msg)) 
 }
 

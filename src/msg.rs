@@ -27,14 +27,14 @@ pub struct EntropyCallbackData {
 pub enum ExecuteMsg {
     Pull {
         // player_bet_amount: Uint128,
-        bet_number: u8,
+        bet_number: Uint128,
     },
 
     ReceiveEntropy(EntropyCallbackMsg),
 
     Spin {
         // player_bet_amount: Uint128,
-        bet_number: u8,
+        bet_number: Uint128,
     },
 }
 
