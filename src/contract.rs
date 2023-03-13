@@ -1,19 +1,9 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+// use cosmwasm_std::CosmosMsg::{Bank};
 use cosmwasm_std::{
     from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, Response, StdResult, Uint128, BankQuery, QueryRequest, WasmQuery, BalanceResponse, Empty, QueryResponse, 
-};
-use cw2::set_contract_version;
-use kujira::querier;
-// use kujira::query::BankQuery;
-use sha2::{Digest, Sha256};
-
-use cw_utils::one_coin;
-use entropy_beacon_cosmos::{CalculateFeeQuery, EntropyCallbackMsg, EntropyRequest};
-use kujira::denom::Denom;
-
-// use entropy_beacon_cosmos::beacon::CalculateFeeQuery; // <--- NEW ENTROPY STUFF
+    MessageInfo, Response, StdResult, Uint128};
 
 use crate::error::ContractError;
 use crate::msg::{
@@ -21,8 +11,11 @@ use crate::msg::{
 };
 use crate::state::{Config, Game, RuleSet, CONFIG, GAME, IDX};
 
-use cosmwasm_std::CosmosMsg::{Bank};
-// `, `cosmwasm_std::QueryRequest::Bank;
+use sha2::{Digest, Sha256};
+use cw_utils::one_coin;
+use entropy_beacon_cosmos::{CalculateFeeQuery, EntropyCallbackMsg, EntropyRequest};
+use kujira::denom::Denom;
+use cw2::set_contract_version;
 
 // Version info for migration
 const CONTRACT_NAME: &str = "crates.io:Spin-the-whale";
@@ -40,14 +33,14 @@ pub fn instantiate(
     // Set contract version
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    // entropy beacon addr testnet harpoon-4
+    // entropy beacon addr TESTNET harpoon-4
     let entropy_beacon_addr = "kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"; 
 
-    // entropy beacon addr mainnet kaiyo-1
+    // entropy beacon addr MAINNET kaiyo-1
     // let entropy_beacon_addr = "kujira1x623ehq3gqx9m9t8asyd9cgehf32gy94mhsw8l99cj3l2nvda2fqrjwqy5"; 
 
     // Validate the entropy beacon addr 
-    let validated_entropy_beacon_addr = deps.api.addr_validate("kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u")?;
+    let validated_entropy_beacon_addr = deps.api.addr_validate(entropy_beacon_addr)?;
 
     // validate the owner's address
     let validated_owner_address: Addr = deps.api.addr_validate(info.sender.as_ref())?;
@@ -114,7 +107,6 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Game { idx } => {
             let game = GAME.load(deps.storage, idx.u128())?;
-            let bytes = game.bet_size.to_be_bytes();
 
             to_binary(&GameResponse {
                 idx,
@@ -189,11 +181,8 @@ pub fn execute_validate_bet(
         .unwrap() {
         return false;
     }
-    let game = GAME.load(deps.storage, 0u128).unwrap();
-    game.bet_size = coin.amount; 
-    GAME.save(deps.storage, 0u128, &game).unwrap(); 
 
-    return true;
+    true
 }
 
 pub fn execute_spin(
@@ -210,7 +199,7 @@ pub fn execute_spin(
         let coin = one_coin(&info).unwrap();
 
         // Check that the denom is the same as the token in the state
-        if coin.denom.clone() != config.house_bankroll.denom {
+        if coin.denom != config.house_bankroll.denom {
             return Err(ContractError::InvalidToken {});
         }
         // Check that the amount is the same as the play_amount in the state
@@ -240,7 +229,7 @@ pub fn execute_spin(
 
                 // Calculate the payout
                 let calculated_payout =
-                    calculate_payout(info.funds[0].amount, outcome[0], config.rule_set.clone());
+                    calculate_payout(info.funds[0].amount, outcome[0], config.rule_set);
 
                 // Return the payout to the player if they win
                 if game.win(bet_number) {
@@ -356,7 +345,7 @@ pub fn execute_entropy_beacon_pull(
     let config = CONFIG.load(deps.storage)?;
 
     // Check that players bet amount is <= 10% of house bankroll, bet num [0, 6], denom etc
-    if let bet_validated = !execute_validate_bet(
+    if !execute_validate_bet(
         &deps, 
         &env, 
         info.clone(), 
@@ -410,7 +399,7 @@ pub fn execute_entropy_beacon_pull(
     };
 
     // Transfer player bet amount to the contract address
-    let player_deposit_msg: BankMsg = BankMsg::Send {
+    let _player_deposit_msg: BankMsg = BankMsg::Send {
         to_address: env.contract.address.to_string(),
         amount: config.token.coins(&game.bet_size),
     };
