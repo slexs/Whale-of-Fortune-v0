@@ -90,17 +90,300 @@ pub fn execute(
         // #STEP 1:
         // Validate player's bet amount and number
         // and handle requesting entropy from the beacon.
-        ExecuteMsg::Pull { bet_number } => execute_entropy_beacon_pull(deps, env, info, bet_number),
+        ExecuteMsg::Pull { bet_number } => {
+            // Load the game config 
+            let config = CONFIG.load(deps.storage)?;
+        
+            // Check that players bet amount is <= 10% of house bankroll, bet num [0, 6], denom etc
+            if !execute_validate_bet(
+                &deps, 
+                &env, 
+                info.clone(), 
+                info.funds[0].amount, 
+                bet_number) {
+                    return Err(ContractError::InvalidBet {});
+                }
+        
+            // Get the current gameID
+            let idx = IDX.load(deps.storage)?;
+        
+            // Create a new game state for this game 
+            let game = Game {
+                player: info.sender.clone(),
+                bet_number: bet_number,
+                bet_size: info.funds[0].amount,
+                payout: Uint128::zero(), // Payout not yet decided in this step
+                result: None,
+                played: false,
+                win: None,
+                game_id: idx,
+                entropy_requested: false, 
+            };
+        
+            // Save the game state to the contract
+            GAME.save(deps.storage, idx.u128(), &game)?;
+        
+            let callback_gas_limit = 100_000u64;
+        
+            let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
+        
+            // Create a request for entropy from the Beacon contract
+            let mut msgs = vec![EntropyRequest {
+                callback_gas_limit, 
+                callback_address: env.contract.address.clone(),
+                funds: vec![Coin {
+                    denom: config.token.to_string(),
+                    amount: Uint128::from(beacon_fee),
+                }],
+                callback_msg: EntropyCallbackData {
+                    original_sender: info.sender,
+                    game: idx,
+                },
+            }.into_cosmos(config.entropy_beacon_addr)?];
+        
+            // If there is a fee, send it to the fee address
+            if !config.fee_amount.is_zero() {
+                msgs.push(CosmosMsg::Bank(BankMsg::Send {
+                    to_address: kujira::utils::fee_address().to_string(),
+                    amount: config.token.coins(&config.fee_amount),
+                }))
+            };
+        
+            // Transfer player bet amount to the contract address
+            let _player_deposit_msg: BankMsg = BankMsg::Send {
+                to_address: env.contract.address.to_string(),
+                amount: config.token.coins(&game.bet_size),
+            };
+        
+            // Response to the contract caller
+            Ok(Response::new()
+            .add_attribute("game", idx)
+            .add_attribute("player", game.player)
+            .add_messages(msgs)
+            .add_message(_player_deposit_msg))
+        
+        },
 
         // #STEP 2:
         // Handle receiving entropy from the beacon.
-        ExecuteMsg::ReceiveEntropy(data) => execute_recieve_entropy(deps, env, info, data),
+        ExecuteMsg::ReceiveEntropy(data) => {
+            
+            // Load the game state from the contract
+            let config = CONFIG.load(deps.storage)?;
+            let idx = IDX.load(deps.storage)?;
+            
+            // Load game state with current game index
+            let mut game = GAME.load(deps.storage, idx.u128())?;
+            
+            // Set entropy_requested flag to true (DEBUG)
+            game.entropy_requested = true;
+            
+            // save game state with entropy requested flag set to true 
+            GAME.save(deps.storage, idx.u128(), &game)?; 
+
+            let mut game = GAME.load(deps.storage, idx.u128())?;
+
+            // Get the address of the entropy beacon
+            let beacon_addr = config.entropy_beacon_addr;
+
+            // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
+            if info.sender != beacon_addr {
+                return Err(ContractError::InvalidEntropyCallback {});
+            }
+
+            //* IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
+            if data.requester != env.contract.address {
+                return Err(ContractError::InvalidEntropyRequester {});
+            }
+
+            // The callback data has 64 bytes of entropy, in a Vec<u8>.
+            let entropy = data.entropy;
+
+            // We can parse out our custom callback data from the message.
+            let callback_data = data.msg;
+            let callback_data: EntropyCallbackData = from_binary(&callback_data)?;
+
+            // gets a result (0-6) from the entropy, and sets game state to played
+            game.result = Some(get_outcome_from_entropy(&entropy));
+            let result = game.result.clone().unwrap();
+
+            // Ensure that the result is valid (less than 6)
+            if result[0] > 6u8 {
+                return Err(ContractError::InvalidGameResult {msg: format!("result:{}", result[0])});
+            }
+
+            game.played = true;
+
+            // GAME.save(deps.storage, idx.u128(), &game)?;
+
+            //TODO: Do the Spin() logic inside this function 
+            // Calculate the possible payout for the player
+            let calculated_payout = calculate_payout(game.bet_size.clone(), result[0], config.rule_set);
+
+            // If the player won, set the win flag to true and send the payout to the player
+            if game.win(game.bet_number) {
+                let payout_coin = Coin {
+                    denom: config.token.to_string(),
+                    amount: calculated_payout,
+                };
+
+                // Set game win flag to true
+                game.win = Some(true); 
+
+                // Send the payout to the players address
+                let payout_msg = BankMsg::Send {
+                    to_address: game.player.to_string(), 
+                    amount: vec![payout_coin],
+                };
+
+                game.played = true;
+                game.payout = calculated_payout;
+                game.result = Some(result.clone());
+                GAME.save(deps.storage, idx.u128(), &game)?;
+
+                // Increment GameID for the next game 
+                IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+
+                return Ok(Response::new()
+                .add_message(payout_msg) 
+                .add_attribute("game", callback_data.game) 
+                .add_attribute("player", game.player)
+                .add_attribute("payout", calculated_payout.to_string())
+                .add_attribute("result", result[0].to_string())
+                .add_attribute("callbackdata.game", callback_data.game.to_string()))
+            } 
+            // Player did NOT win the game (loss)
+            else {
+                game.played = true; 
+                game.played = true;
+                game.win = Some(false);
+                game.payout = Uint128::zero();
+                game.result = Some(result);
+                GAME.save(deps.storage, idx.u128(), &game)?;
+
+                // Increment gameID for the next game
+                IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+
+                return Ok(Response::new()
+                    .add_attribute("game", idx.u128().to_string())
+                    .add_attribute("player", game.player.to_string())
+                    .add_attribute("result", "lose"));
+
+                }
+            }
+
+            // return Ok(Response::new()
+            //     .add_attribute("game", callback_data.game)
+            //     .add_attribute("player", game.player)
+            //     .add_attribute("result", "pending")
+            //     .add_attribute("callbackdata.game", callback_data.game.to_string())); 
+            }
 
         // #STEP 3:
         // Handle player placing a bet and spinning the wheel
-        ExecuteMsg::Spin { bet_number } => execute_spin(deps, env, info, bet_number),
-    }
+        // ExecuteMsg::Spin { bet_number } => {
+        //     // Load the game state
+        //     let config = CONFIG.load(deps.storage).unwrap();
+    
+        //     // Check that only one denom was sent
+        //     let coin = one_coin(&info).unwrap();
+    
+        //     // Check that the denom is the same as the token in the state
+        //     if coin.denom != config.house_bankroll.denom {
+        //         return Err(ContractError::InvalidToken {});
+        //     }
+        //     // Check that the amount is the same as the play_amount in the state
+        //     if coin.amount != info.funds[0].amount {
+        //         return Err(ContractError::InsufficientFunds {});
+        //     }
+        //     // Get the current game index
+        //     let idx = IDX.load(deps.storage)?;
+    
+        //     // Check if there is a game at the current index
+        //     let game = GAME.may_load(deps.storage, idx.u128())?;
+    
+        //     // Check if the game has been played
+        //     match game {
+        //         // The game has been played
+        //         Some(mut game) => {
+    
+        //             // let game = GAME.load(deps.storage, idx.u128())?;
+    
+        //             // only let players access their own game
+        //             if game.player != info.sender {
+        //                 return Err(ContractError::Unauthorized {});
+        //             }
+    
+        //             // Get the result of the game
+        //             let outcome = game.result.clone().unwrap();
+    
+        //             // Calculate the payout
+        //             let calculated_payout =
+        //                 calculate_payout(info.funds[0].amount, outcome[0], config.rule_set);
+    
+        //             // Return the payout to the player if they win
+        //             if game.win(bet_number) {
+        //                 let payout_coin = Coin {
+        //                     denom: coin.denom,
+        //                     amount: calculated_payout,
+        //                 };
+        //                 // Player has won, update game state
+        //                 game.win = Some(true);
+    
+        //                 // Send the payout to the player
+        //                 let payout_msg = BankMsg::Send {
+        //                     to_address: game.player.to_string(),
+        //                     amount: vec![payout_coin],
+        //                 };
+    
+        //                 // generate the response
+        //                 let response = Response::new()
+        //                     .add_attribute("game", idx.u128().to_string())
+        //                     .add_attribute("player", game.player.clone())
+        //                     .add_attribute("result", "win")
+        //                     .add_attribute("payout", calculated_payout.to_string())
+        //                     // .add_message(send_msg) // Add the collection message to the response //TODO: Can i add two messages to the response?
+        //                     .add_message(payout_msg.clone()); // Add the payout message to the response
+    
+        //                 // Player has won, update game state
+        //                 game.played = true;
+        //                 game.bet_number = bet_number;
+        //                 game.payout = calculated_payout;
+        //                 game.result = Some(outcome);
+        //                 GAME.save(deps.storage, idx.u128(), &game)?;
+    
+        //                 // Increment gameID for the next game
+        //                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+    
+        //                 Ok(response.add_message(payout_msg))
+        //             } else {
+        //                 // Player has lost, update game state
+        //                 game.played = true;
+        //                 game.win = Some(false);
+        //                 game.bet_number = bet_number;
+        //                 game.payout = Uint128::zero();
+        //                 game.result = Some(outcome);
+        //                 GAME.save(deps.storage, idx.u128(), &game)?;
+    
+        //                 // Increment gameID for the next game
+        //                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
+    
+        //                 return Ok(Response::new()
+        //                     .add_attribute("game", idx.u128().to_string())
+        //                     .add_attribute("player", game.player.to_string())
+        //                     .add_attribute("result", "lose"));
+        //             }
+        //         }
+        //         // Game has not been played
+        //         None => {
+        //             Ok(Response::new()
+        //                 .add_attribute("game", "not played")
+        //                 .add_attribute("result", "pending"))
+        //         }
+        //     }
+        // },
 }
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
@@ -113,6 +396,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 player: game.player.clone(),
                 result: game.result.as_ref().map(|x| x.clone()),
                 win: game.win(game.bet_size),
+                entropy_requested: game.entropy_requested,
             })
         }
     }
@@ -183,238 +467,6 @@ pub fn execute_validate_bet(
     }
 
     true
-}
-
-pub fn execute_spin(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    bet_number: Uint128,
-) -> Result<Response, ContractError> {
-    {
-        // Load the game state
-        let config = CONFIG.load(deps.storage).unwrap();
-
-        // Check that only one denom was sent
-        let coin = one_coin(&info).unwrap();
-
-        // Check that the denom is the same as the token in the state
-        if coin.denom != config.house_bankroll.denom {
-            return Err(ContractError::InvalidToken {});
-        }
-        // Check that the amount is the same as the play_amount in the state
-        if coin.amount != info.funds[0].amount {
-            return Err(ContractError::InsufficientFunds {});
-        }
-        // Get the current game index
-        let idx = IDX.load(deps.storage)?;
-
-        // Check if there is a game at the current index
-        let game = GAME.may_load(deps.storage, idx.u128())?;
-
-        // Check if the game has been played
-        match game {
-            // The game has been played
-            Some(mut game) => {
-
-                // let game = GAME.load(deps.storage, idx.u128())?;
-
-                // only let players access their own game
-                if game.player != info.sender {
-                    return Err(ContractError::Unauthorized {});
-                }
-
-                // Get the result of the game
-                let outcome = game.result.clone().unwrap();
-
-                // Calculate the payout
-                let calculated_payout =
-                    calculate_payout(info.funds[0].amount, outcome[0], config.rule_set);
-
-                // Return the payout to the player if they win
-                if game.win(bet_number) {
-                    let payout_coin = Coin {
-                        denom: coin.denom,
-                        amount: calculated_payout,
-                    };
-                    // Player has won, update game state
-                    game.win = Some(true);
-
-                    // Send the payout to the player
-                    let payout_msg = BankMsg::Send {
-                        to_address: game.player.to_string(),
-                        amount: vec![payout_coin],
-                    };
-
-                    // generate the response
-                    let response = Response::new()
-                        .add_attribute("game", idx.u128().to_string())
-                        .add_attribute("player", game.player.clone())
-                        .add_attribute("result", "win")
-                        .add_attribute("payout", calculated_payout.to_string())
-                        // .add_message(send_msg) // Add the collection message to the response //TODO: Can i add two messages to the response?
-                        .add_message(payout_msg.clone()); // Add the payout message to the response
-
-                    // Player has won, update game state
-                    game.played = true;
-                    game.bet_number = bet_number;
-                    game.payout = calculated_payout;
-                    game.result = Some(outcome);
-                    GAME.save(deps.storage, idx.u128(), &game)?;
-
-                    // Increment gameID for the next game
-                    IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
-
-                    Ok(response.add_message(payout_msg))
-                } else {
-                    // Player has lost, update game state
-                    game.played = true;
-                    game.win = Some(false);
-                    game.bet_number = bet_number;
-                    game.payout = Uint128::zero();
-                    game.result = Some(outcome);
-                    GAME.save(deps.storage, idx.u128(), &game)?;
-
-                    // Increment gameID for the next game
-                    IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
-
-                    return Ok(Response::new()
-                        .add_attribute("game", idx.u128().to_string())
-                        .add_attribute("player", game.player.to_string())
-                        .add_attribute("result", "lose"));
-                }
-            }
-            // Game has not been played
-            None => {
-                Ok(Response::new()
-                    .add_attribute("game", "not played")
-                    .add_attribute("result", "pending"))
-            }
-        }
-    }
-}
-
-pub fn execute_recieve_entropy(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    data: EntropyCallbackMsg,
-) -> Result<Response, ContractError> {
-    // Load the game state from the contract
-    let config = CONFIG.load(deps.storage)?;
-    let idx = IDX.load(deps.storage)?;
-
-    // Get the address of the entropy beacon
-    let beacon_addr = config.entropy_beacon_addr;
-
-    // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
-    if info.sender != beacon_addr {
-        return Err(ContractError::InvalidEntropyCallback {});
-    }
-
-    //* IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
-    if data.requester != env.contract.address {
-        return Err(ContractError::InvalidEntropyRequester {});
-    }
-
-    // The callback data has 64 bytes of entropy, in a Vec<u8>.
-    let entropy = data.entropy;
-
-    // We can parse out our custom callback data from the message.
-    let callback_data = data.msg;
-    let callback_data: EntropyCallbackData = from_binary(&callback_data)?;
-
-    // Load game state with current game index
-    let mut game = GAME.load(deps.storage, idx.u128())?;
-
-    // gets a result (0-6) from the entropy, and sets game state to played
-    game.result = Some(get_outcome_from_entropy(&entropy));
-    game.played = true;
-
-    GAME.save(deps.storage, idx.u128(), &game)?;
-
-    return Ok(Response::new()
-        .add_attribute("game", callback_data.game)
-        .add_attribute("player", game.player)
-        .add_attribute("result", "pending")
-        .add_attribute("callbackdata.game", callback_data.game.to_string())); 
-}
-
-pub fn execute_entropy_beacon_pull(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    player_bet_number: Uint128,
-) -> Result<Response, ContractError> {
-    // Load the game config 
-    let config = CONFIG.load(deps.storage)?;
-
-    // Check that players bet amount is <= 10% of house bankroll, bet num [0, 6], denom etc
-    if !execute_validate_bet(
-        &deps, 
-        &env, 
-        info.clone(), 
-        info.funds[0].amount, 
-        player_bet_number) {
-            return Err(ContractError::InvalidBet {});
-        }
-
-    // Get the current gameID
-    let idx = IDX.load(deps.storage)?;
-
-    // Create a new game state for this game 
-    let game = Game {
-        player: info.sender.clone(),
-        bet_number: player_bet_number,
-        bet_size: info.funds[0].amount,
-        payout: Uint128::zero(), // Payout not yet decided in this step
-        result: None,
-        played: false,
-        win: None,
-        game_id: idx,
-    };
-
-    // Save the game state to the contract
-    GAME.save(deps.storage, idx.u128(), &game)?;
-
-    let callback_gas_limit = 100_000u64;
-
-    let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
-
-    // Create a request for entropy from the Beacon contract
-    let mut msgs = vec![EntropyRequest {
-        callback_gas_limit, 
-        callback_address: env.contract.address.clone(),
-        funds: vec![Coin {
-            denom: config.token.to_string(),
-            amount: Uint128::from(beacon_fee),
-        }],
-        callback_msg: EntropyCallbackData {
-            original_sender: info.sender,
-            game: idx,
-        },
-    }.into_cosmos(config.entropy_beacon_addr)?];
-
-    // If there is a fee, send it to the fee address
-    if !config.fee_amount.is_zero() {
-        msgs.push(CosmosMsg::Bank(BankMsg::Send {
-            to_address: kujira::utils::fee_address().to_string(),
-            amount: config.token.coins(&config.fee_amount),
-        }))
-    };
-
-    // Transfer player bet amount to the contract address
-    let _player_deposit_msg: BankMsg = BankMsg::Send {
-        to_address: env.contract.address.to_string(),
-        amount: config.token.coins(&game.bet_size),
-    };
-
-    // Response to the contract caller
-    Ok(Response::new()
-    .add_attribute("game", idx)
-    .add_attribute("player", game.player)
-    .add_messages(msgs))
-
 }
 
 // Calculate the payout amount for a given bet

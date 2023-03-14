@@ -25,7 +25,8 @@ pub struct Game {
     pub result: Option<Vec<u8>>,
     pub played: bool,
     pub win: Option<bool>,
-    pub game_id: Uint128, 
+    pub game_id: Uint128,
+    pub entropy_requested: bool, 
 }
 
 impl Game {

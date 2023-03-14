@@ -40,4 +40,7 @@ pub enum ContractError {
 
     #[error("Original requester for entropy is not trusted (must be the contract itself)")]
     InvalidEntropyRequester {},
+
+    #[error("game.result is invalid: {msg}")]
+    InvalidGameResult { msg: String },
 }

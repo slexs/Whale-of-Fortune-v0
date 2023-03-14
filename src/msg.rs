@@ -31,11 +31,11 @@ pub enum ExecuteMsg {
     },
 
     ReceiveEntropy(EntropyCallbackMsg),
-
-    Spin {
-        // player_bet_amount: Uint128,
-        bet_number: Uint128,
-    },
+    //TODO: Move Spin() inside RecieveEntropy()
+    // Spin {
+    //     // player_bet_amount: Uint128,
+    //     bet_number: Uint128,
+    // },
 }
 
 #[cw_serde]
@@ -51,6 +51,7 @@ pub struct GameResponse {
     pub player: Addr,
     pub result: Option<Vec<u8>>,
     pub win: bool,
+    pub entropy_requested: bool, 
 }
 
 impl ExecuteMsg {
