@@ -177,7 +177,7 @@ pub fn execute(
                     },
                 }
                 .into_cosmos(config.entropy_beacon_addr)?,
-            )); 
+            ))
 
             // // Response to the contract caller
             // Ok(Response::new()
@@ -294,7 +294,8 @@ pub fn execute(
                     .add_attribute("result", "lose"));
 
                 }
-            }
+            },
+        }
 
 }
 
