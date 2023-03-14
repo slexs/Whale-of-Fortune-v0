@@ -127,40 +127,64 @@ pub fn execute(
         
             let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
         
-            // Create a request for entropy from the Beacon contract
-            let mut msgs = vec![EntropyRequest {
-                callback_gas_limit, 
-                callback_address: env.contract.address.clone(),
-                funds: vec![Coin {
-                    denom: config.token.to_string(),
-                    amount: Uint128::from(beacon_fee),
-                }],
-                callback_msg: EntropyCallbackData {
-                    original_sender: info.sender,
-                    game: idx,
-                },
-            }.into_cosmos(config.entropy_beacon_addr)?];
+            // // Create a request for entropy from the Beacon contract
+            // let mut msgs = vec![EntropyRequest {
+            //     callback_gas_limit, 
+            //     callback_address: env.contract.address.clone(),
+            //     funds: vec![Coin {
+            //         denom: config.token.to_string(),
+            //         amount: Uint128::from(beacon_fee),
+            //     }],
+            //     callback_msg: EntropyCallbackData {
+            //         original_sender: info.sender,
+            //         game: idx,
+            //     },
+            // }.into_cosmos(config.entropy_beacon_addr)?];
         
             // If there is a fee, send it to the fee address
-            if !config.fee_amount.is_zero() {
-                msgs.push(CosmosMsg::Bank(BankMsg::Send {
-                    to_address: kujira::utils::fee_address().to_string(),
-                    amount: config.token.coins(&config.fee_amount),
-                }))
-            };
-        
+            // if !config.fee_amount.is_zero() {
+            //     msgs.push(CosmosMsg::Bank(BankMsg::Send {
+            //         to_address: kujira::utils::fee_address().to_string(),
+            //         amount: config.token.coins(&config.fee_amount),
+            //     }))
+            // };
+            // if !config.fee_amount.is_zero() {
+            //     CosmosMsg::Bank(BankMsg::Send {
+            //         to_address: kujira::utils::fee_address().to_string(),
+            //         amount: config.token.coins(&config.fee_amount),
+            //     }) 
+            // };
+
             // Transfer player bet amount to the contract address
             let _player_deposit_msg: BankMsg = BankMsg::Send {
                 to_address: env.contract.address.to_string(),
                 amount: config.token.coins(&game.bet_size),
             };
         
-            // Response to the contract caller
-            Ok(Response::new()
-            .add_attribute("game", idx)
-            .add_attribute("player", game.player)
-            .add_messages(msgs)
-            .add_message(_player_deposit_msg))
+            Ok(Response::new().add_message(
+                EntropyRequest {
+                    callback_gas_limit,
+                    callback_address: env.contract.address,
+                    funds: vec![Coin {
+                        denom: "ukuji".to_string(),
+                        amount: Uint128::from(1000u128),
+                    }],
+                    // A custom struct and data we define for callback info.
+                    // You should change this callback message struct to match the information your contract needs.
+                    callback_msg: EntropyCallbackData {
+                        original_sender: Addr::unchecked(info.sender),
+                        game: idx, 
+                    },
+                }
+                .into_cosmos(config.entropy_beacon_addr)?,
+            ))
+
+            // // Response to the contract caller
+            // Ok(Response::new()
+            // // .add_attribute("game", idx)
+            // // .add_attribute("player", game.player)
+            // .add_messages(msgs))
+            // // .add_message(_player_deposit_msg))
         
         },
 
@@ -272,116 +296,6 @@ pub fn execute(
                 }
             }
 
-            // return Ok(Response::new()
-            //     .add_attribute("game", callback_data.game)
-            //     .add_attribute("player", game.player)
-            //     .add_attribute("result", "pending")
-            //     .add_attribute("callbackdata.game", callback_data.game.to_string())); 
-            }
-
-        // #STEP 3:
-        // Handle player placing a bet and spinning the wheel
-        // ExecuteMsg::Spin { bet_number } => {
-        //     // Load the game state
-        //     let config = CONFIG.load(deps.storage).unwrap();
-    
-        //     // Check that only one denom was sent
-        //     let coin = one_coin(&info).unwrap();
-    
-        //     // Check that the denom is the same as the token in the state
-        //     if coin.denom != config.house_bankroll.denom {
-        //         return Err(ContractError::InvalidToken {});
-        //     }
-        //     // Check that the amount is the same as the play_amount in the state
-        //     if coin.amount != info.funds[0].amount {
-        //         return Err(ContractError::InsufficientFunds {});
-        //     }
-        //     // Get the current game index
-        //     let idx = IDX.load(deps.storage)?;
-    
-        //     // Check if there is a game at the current index
-        //     let game = GAME.may_load(deps.storage, idx.u128())?;
-    
-        //     // Check if the game has been played
-        //     match game {
-        //         // The game has been played
-        //         Some(mut game) => {
-    
-        //             // let game = GAME.load(deps.storage, idx.u128())?;
-    
-        //             // only let players access their own game
-        //             if game.player != info.sender {
-        //                 return Err(ContractError::Unauthorized {});
-        //             }
-    
-        //             // Get the result of the game
-        //             let outcome = game.result.clone().unwrap();
-    
-        //             // Calculate the payout
-        //             let calculated_payout =
-        //                 calculate_payout(info.funds[0].amount, outcome[0], config.rule_set);
-    
-        //             // Return the payout to the player if they win
-        //             if game.win(bet_number) {
-        //                 let payout_coin = Coin {
-        //                     denom: coin.denom,
-        //                     amount: calculated_payout,
-        //                 };
-        //                 // Player has won, update game state
-        //                 game.win = Some(true);
-    
-        //                 // Send the payout to the player
-        //                 let payout_msg = BankMsg::Send {
-        //                     to_address: game.player.to_string(),
-        //                     amount: vec![payout_coin],
-        //                 };
-    
-        //                 // generate the response
-        //                 let response = Response::new()
-        //                     .add_attribute("game", idx.u128().to_string())
-        //                     .add_attribute("player", game.player.clone())
-        //                     .add_attribute("result", "win")
-        //                     .add_attribute("payout", calculated_payout.to_string())
-        //                     // .add_message(send_msg) // Add the collection message to the response //TODO: Can i add two messages to the response?
-        //                     .add_message(payout_msg.clone()); // Add the payout message to the response
-    
-        //                 // Player has won, update game state
-        //                 game.played = true;
-        //                 game.bet_number = bet_number;
-        //                 game.payout = calculated_payout;
-        //                 game.result = Some(outcome);
-        //                 GAME.save(deps.storage, idx.u128(), &game)?;
-    
-        //                 // Increment gameID for the next game
-        //                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
-    
-        //                 Ok(response.add_message(payout_msg))
-        //             } else {
-        //                 // Player has lost, update game state
-        //                 game.played = true;
-        //                 game.win = Some(false);
-        //                 game.bet_number = bet_number;
-        //                 game.payout = Uint128::zero();
-        //                 game.result = Some(outcome);
-        //                 GAME.save(deps.storage, idx.u128(), &game)?;
-    
-        //                 // Increment gameID for the next game
-        //                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
-    
-        //                 return Ok(Response::new()
-        //                     .add_attribute("game", idx.u128().to_string())
-        //                     .add_attribute("player", game.player.to_string())
-        //                     .add_attribute("result", "lose"));
-        //             }
-        //         }
-        //         // Game has not been played
-        //         None => {
-        //             Ok(Response::new()
-        //                 .add_attribute("game", "not played")
-        //                 .add_attribute("result", "pending"))
-        //         }
-        //     }
-        // },
 }
 
 

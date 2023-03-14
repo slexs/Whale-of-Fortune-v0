@@ -49,6 +49,7 @@ pub enum QueryMsg {
 pub struct GameResponse {
     pub idx: Uint128,
     pub player: Addr,
+    pub player_bet_number: Uint128,
     pub result: Option<Vec<u8>>,
     pub win: bool,
     pub entropy_requested: bool, 
