@@ -1,1 +1,1 @@
-34ccf4c355cc32378e5a9f0867cf18e83f2095f01fa7956b6954729e93d3de8c  whale_of_fortune.wasm
+2c5e86313d4724eb75cf231abca7d49b0fb1e4185f33bf9be855e0c99f80ec0b  whale_of_fortune.wasm

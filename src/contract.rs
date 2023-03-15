@@ -165,35 +165,36 @@ pub fn execute(
             // Calculate the fee for requesting entropy from the beacon (subsidized on Kujira)
             let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
         
+            //TODO: Not sure if this works, will try with "old" version 
             // Create a request for entropy from the Beacon contract
-            let mut msgs = vec![EntropyRequest {
-                callback_gas_limit, 
-                callback_address: env.contract.address.clone(),
-                funds: vec![Coin {
-                    denom: config.token.to_string(),
-                    amount: Uint128::from(beacon_fee),
-                }],
-                callback_msg: EntropyCallbackData {
-                    original_sender: info.sender,
-                    game: idx,
-                },
-            }.into_cosmos(config.entropy_beacon_addr)?]; 
-            // .into_cosmos() Removes funds with zero amount to avoid bank errors.
+            // let mut msgs = vec![EntropyRequest {
+            //     callback_gas_limit, 
+            //     callback_address: env.contract.address.clone(),
+            //     funds: vec![Coin {
+            //         denom: config.token.to_string(),
+            //         amount: Uint128::from(beacon_fee),
+            //     }],
+            //     callback_msg: EntropyCallbackData {
+            //         original_sender: info.sender,
+            //         game: idx,
+            //     },
+            // }.into_cosmos(config.entropy_beacon_addr)?]; 
+            // // .into_cosmos() Removes funds with zero amount to avoid bank errors.
         
-            // If there is a beacon fee, send it to the fee address
-            if !config.fee_amount.is_zero() {
-                msgs.push(CosmosMsg::Bank(BankMsg::Send {
-                    to_address: kujira::utils::fee_address().to_string(),
-                    amount: config.token.coins(&config.fee_amount),
-                }))
-            };
+            // // If there is a beacon fee, send it to the fee address
+            // if !config.fee_amount.is_zero() {
+            //     msgs.push(CosmosMsg::Bank(BankMsg::Send {
+            //         to_address: kujira::utils::fee_address().to_string(),
+            //         amount: config.token.coins(&config.fee_amount),
+            //     }))
+            // };
 
             // Transfer player bet amount to the contract address
             let _player_deposit_msg: BankMsg = BankMsg::Send {
                 to_address: env.contract.address.to_string(),
                 amount: config.token.coins(&game.bet_size),
             };
-       /*  
+        
             Ok(Response::new().add_message(
                 EntropyRequest {
                     callback_gas_limit,
@@ -210,17 +211,17 @@ pub fn execute(
                     },
                 }
                 .into_cosmos(config.entropy_beacon_addr)?,
-            )) */
+            ))
 
-            Ok(Response::new()
-            .add_attribute("game", idx)
-            .add_attribute("game_id", idx)
-            .add_attribute("player", game.player)
-            .add_attribute("bet_number", game.bet_number)
-            .add_attribute("bet_size", game.bet_size)
-            .add_attribute("beacon_fee", beacon_fee.to_string())
-            .add_attribute("callback_gas_limit", callback_gas_limit.to_string())
-            .add_messages(msgs))
+            // Ok(Response::new()
+            // .add_attribute("game", idx)
+            // .add_attribute("game_id", idx)
+            // .add_attribute("player", game.player)
+            // .add_attribute("bet_number", game.bet_number)
+            // .add_attribute("bet_size", game.bet_size)
+            // .add_attribute("beacon_fee", beacon_fee.to_string())
+            // .add_attribute("callback_gas_limit", callback_gas_limit.to_string())
+            // .add_messages(msgs))
         
         },
 
@@ -327,7 +328,7 @@ pub fn execute(
                 game.played = true; 
                 game.win = Some(false);
                 game.payout = Uint128::zero();
-                game.result = Some(result);
+                game.result = Some(result.clone());
                 GAME.save(deps.storage, idx.u128(), &game)?;
 
                 // Increment gameID for the next game
@@ -335,8 +336,10 @@ pub fn execute(
 
                 return Ok(Response::new()
                     .add_attribute("game", idx.u128().to_string())
+                    .add_attribute("game_id", idx.u128().to_string())
                     .add_attribute("player", game.player.to_string())
-                    .add_attribute("result", "lose"));
+                    .add_attribute("payout", game.payout.to_string())
+                    .add_attribute("result", result[0].to_string()));
 
                 }
             },
