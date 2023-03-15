@@ -1,4 +1,6 @@
 use cosmwasm_schema::cw_serde;
+
+use std::fmt; 
 use kujira::denom::Denom;
 
 use cosmwasm_std::{Addr, Coin, Uint128};
@@ -13,6 +15,15 @@ pub struct Config {
     pub fee_amount: Uint128,
     pub rule_set: RuleSet,
     pub token: Denom,
+}
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Config {{ entropy_beacon_addr: {}, owner_addr: {}, house_bankroll: {}, token: {}, fee_amount: {}, rule_set: {:?} }}",
+            self.entropy_beacon_addr, self.owner_addr, self.house_bankroll, self.token, self.fee_amount, self.rule_set
+        )
+    }
 }
 
 #[cw_serde]

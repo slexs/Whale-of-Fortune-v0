@@ -1,8 +1,6 @@
 #[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
-// use cosmwasm_std::CosmosMsg::{Bank};
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
+    entry_point, from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
     MessageInfo, Response, StdResult, Uint128};
 
 use crate::error::ContractError;
@@ -10,6 +8,7 @@ use crate::msg::{
     EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg,
 };
 use crate::state::{Config, Game, RuleSet, CONFIG, GAME, IDX};
+use crate::helpers::{is_valid_entropy, validate_ruleset};
 
 use sha2::{Digest, Sha256};
 use cw_utils::one_coin;
@@ -34,27 +33,33 @@ pub fn instantiate(
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     // entropy beacon addr TESTNET harpoon-4
-    let entropy_beacon_addr = "kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"; 
+    let entropy_beacon_addr_testnet = "kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"; 
 
     // entropy beacon addr MAINNET kaiyo-1
-    // let entropy_beacon_addr = "kujira1x623ehq3gqx9m9t8asyd9cgehf32gy94mhsw8l99cj3l2nvda2fqrjwqy5"; 
+    // let entropy_beacon_addr_mainnet = "kujira1x623ehq3gqx9m9t8asyd9cgehf32gy94mhsw8l99cj3l2nvda2fqrjwqy5"; 
 
     // Validate the entropy beacon addr 
-    let validated_entropy_beacon_addr = deps.api.addr_validate(entropy_beacon_addr)?;
+    let validated_entropy_beacon_addr = deps.api.addr_validate(entropy_beacon_addr_testnet)?;
 
     // validate the owner's address
     let validated_owner_address: Addr = deps.api.addr_validate(info.sender.as_ref())?;
 
+    // denom used: ukuji 
+    let kuji_denom = "ukuji".to_string(); 
+
+    // Set the house bankroll, initialized to zero 
+    let house_bankroll = Coin {
+        denom: kuji_denom.clone(),
+        amount: Uint128::zero(),
+    };
+
     // Initialize Config
     let config = Config {
-        entropy_beacon_addr: validated_entropy_beacon_addr,
-        owner_addr: validated_owner_address,
-        house_bankroll: Coin { // Init house bankroll to zero ukuji 
-            denom: "ukuji".to_string(),
-            amount: Uint128::zero(),
-        },
-        token: Denom::from("ukuji"), // Init token to ukuji
-        fee_amount: Uint128::zero(),
+        entropy_beacon_addr: validated_entropy_beacon_addr, // The entropy beacon contract address
+        owner_addr: validated_owner_address, // The owner of the contract 
+        house_bankroll, // House bankroll denom and amount 
+        token: Denom::from(kuji_denom.clone()), // Init token to ukuji
+        fee_amount: Uint128::zero(), // beacon fee amount 
         rule_set: RuleSet { // Payout ratios
             zero: Uint128::from(1u128), // 1:1
             one: Uint128::from(3u128), // 3:1
@@ -66,11 +71,41 @@ pub fn instantiate(
         },
     };
 
+    // Validate that the rule set is valid (sum of all rule ratios == 129)
+    if !validate_ruleset(&config.rule_set) {
+        return Err(ContractError::InvalidRuleset {});
+    }
+
+    // Check house bankroll for valid denom and expected value 
+    if config.house_bankroll.denom != kuji_denom {
+        return Err(ContractError::InvalidHouseDenom {invalid_denom: config.house_bankroll.denom.clone(), valid_denom: kuji_denom.clone()});
+    }
+
+    // Check and validate payout ratios
+    if config.rule_set.zero.u128() != 1u128 {
+        return Err(ContractError::InvalidPayoutRatio {got: config.rule_set.zero.u128().to_string(), expected: 1u128.to_string()});
+    }
+
     // Save the initialized config to storage 
     CONFIG.save(deps.storage, &config)?;
     
     // Save the initialized game index 0 to storage
     IDX.save(deps.storage, &Uint128::zero())?;
+
+    // Load the saved config and index from storage
+    let loaded_config = CONFIG.load(deps.storage)?;
+    let loaded_index = IDX.load(deps.storage)?;
+
+    // Check that the saved config state and index state match the expected values 
+    if loaded_config != config {
+        return Err(ContractError::InvalidConfig 
+            {expected: config.to_string(), got: loaded_config.to_string()});
+    }
+
+    if loaded_index != Uint128::zero() {
+        return Err(ContractError::InvalidIndex 
+            { expected: Uint128::zero().to_string(), got: loaded_index.to_string()});
+    }
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -103,6 +138,7 @@ pub fn execute(
                 bet_number) {
                     return Err(ContractError::InvalidBet {});
                 }
+
         
             // Get the current gameID
             let idx = IDX.load(deps.storage)?;
@@ -117,50 +153,47 @@ pub fn execute(
                 played: false,
                 win: None,
                 game_id: idx,
-                entropy_requested: false, 
+                entropy_requested: false,
             };
         
-            // Save the game state to the contract
+            // Save the current game state to the contract
             GAME.save(deps.storage, idx.u128(), &game)?;
-        
+            
+            // Set the callback gas limit for the entropy request
             let callback_gas_limit = 100_000u64;
         
+            // Calculate the fee for requesting entropy from the beacon (subsidized on Kujira)
             let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
         
-            // // Create a request for entropy from the Beacon contract
-            // let mut msgs = vec![EntropyRequest {
-            //     callback_gas_limit, 
-            //     callback_address: env.contract.address.clone(),
-            //     funds: vec![Coin {
-            //         denom: config.token.to_string(),
-            //         amount: Uint128::from(beacon_fee),
-            //     }],
-            //     callback_msg: EntropyCallbackData {
-            //         original_sender: info.sender,
-            //         game: idx,
-            //     },
-            // }.into_cosmos(config.entropy_beacon_addr)?];
+            // Create a request for entropy from the Beacon contract
+            let mut msgs = vec![EntropyRequest {
+                callback_gas_limit, 
+                callback_address: env.contract.address.clone(),
+                funds: vec![Coin {
+                    denom: config.token.to_string(),
+                    amount: Uint128::from(beacon_fee),
+                }],
+                callback_msg: EntropyCallbackData {
+                    original_sender: info.sender,
+                    game: idx,
+                },
+            }.into_cosmos(config.entropy_beacon_addr)?]; 
+            // .into_cosmos() Removes funds with zero amount to avoid bank errors.
         
-            // If there is a fee, send it to the fee address
-            // if !config.fee_amount.is_zero() {
-            //     msgs.push(CosmosMsg::Bank(BankMsg::Send {
-            //         to_address: kujira::utils::fee_address().to_string(),
-            //         amount: config.token.coins(&config.fee_amount),
-            //     }))
-            // };
-            // if !config.fee_amount.is_zero() {
-            //     CosmosMsg::Bank(BankMsg::Send {
-            //         to_address: kujira::utils::fee_address().to_string(),
-            //         amount: config.token.coins(&config.fee_amount),
-            //     }) 
-            // };
+            // If there is a beacon fee, send it to the fee address
+            if !config.fee_amount.is_zero() {
+                msgs.push(CosmosMsg::Bank(BankMsg::Send {
+                    to_address: kujira::utils::fee_address().to_string(),
+                    amount: config.token.coins(&config.fee_amount),
+                }))
+            };
 
             // Transfer player bet amount to the contract address
             let _player_deposit_msg: BankMsg = BankMsg::Send {
                 to_address: env.contract.address.to_string(),
                 amount: config.token.coins(&game.bet_size),
             };
-        
+       /*  
             Ok(Response::new().add_message(
                 EntropyRequest {
                     callback_gas_limit,
@@ -177,74 +210,87 @@ pub fn execute(
                     },
                 }
                 .into_cosmos(config.entropy_beacon_addr)?,
-            ))
+            )) */
 
-            // // Response to the contract caller
-            // Ok(Response::new()
-            // // .add_attribute("game", idx)
-            // // .add_attribute("player", game.player)
-            // .add_messages(msgs))
-            // // .add_message(_player_deposit_msg))
+            Ok(Response::new()
+            .add_attribute("game", idx)
+            .add_attribute("game_id", idx)
+            .add_attribute("player", game.player)
+            .add_attribute("bet_number", game.bet_number)
+            .add_attribute("bet_size", game.bet_size)
+            .add_attribute("beacon_fee", beacon_fee.to_string())
+            .add_attribute("callback_gas_limit", callback_gas_limit.to_string())
+            .add_messages(msgs))
         
         },
 
         // #STEP 2:
-        // Handle receiving entropy from the beacon.
+        // Handle receiving entropy from the beacon, and decide the game result.
         ExecuteMsg::ReceiveEntropy(data) => {
             
             // Load the game state from the contract
             let config = CONFIG.load(deps.storage)?;
+
+            // Load the current game index
             let idx = IDX.load(deps.storage)?;
             
             // Load game state with current game index
             let mut game = GAME.load(deps.storage, idx.u128())?;
+
+            // Check that the game at the current index has not already been played
+            if game.played {
+                return Err(ContractError::GameAlreadyPlayed {});
+            } 
             
-            // Set entropy_requested flag to true (DEBUG)
+            // Indicate that the entropy has been requested for this game
             game.entropy_requested = true;
-            
-            // save game state with entropy requested flag set to true 
-            GAME.save(deps.storage, idx.u128(), &game)?; 
 
-            let mut game = GAME.load(deps.storage, idx.u128())?;
-
-            // Get the address of the entropy beacon
-            let beacon_addr = config.entropy_beacon_addr;
-
-            // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
-            if info.sender != beacon_addr {
-                return Err(ContractError::InvalidEntropyCallback {});
+            //* IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
+            if info.sender != config.entropy_beacon_addr {
+                return Err(ContractError::InvalidEntropyCallback 
+                    {caller: info.sender.to_string()});
             }
 
             //* IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
             if data.requester != env.contract.address {
-                return Err(ContractError::InvalidEntropyRequester {});
+                return Err(ContractError::InvalidEntropyRequester 
+                    {requester: data.requester.to_string(), contract: env.contract.address.to_string()});
             }
 
             // The callback data has 64 bytes of entropy, in a Vec<u8>.
             let entropy = data.entropy;
 
-            // We can parse out our custom callback data from the message.
+            // Validate that the entropy entropy is of correct format and length (64 bytes)
+            if !is_valid_entropy(&entropy[0].to_string()) {
+                return Err(ContractError::InvalidEntropy {entropy: entropy[0].to_string()});
+            }
+
+            // Parse out our custom callback data from the message.
             let callback_data = data.msg;
             let callback_data: EntropyCallbackData = from_binary(&callback_data)?;
 
-            // gets a result (0-6) from the entropy, and sets game state to played
+            // Get the result [0:6] from the entropy
             game.result = Some(get_outcome_from_entropy(&entropy));
             let result = game.result.clone().unwrap();
+           
 
             // Ensure that the result is valid (less than 6)
             if result[0] > 6u8 {
                 return Err(ContractError::InvalidGameResult {msg: format!("result:{}", result[0])});
             }
 
+            // Set game state to played
             game.played = true;
 
-            // GAME.save(deps.storage, idx.u128(), &game)?;
-
-            //TODO: Do the Spin() logic inside this function 
-            // Calculate the possible payout for the player
+            // Check the ruleset to make sure the correct rules are applied 
+            if !validate_ruleset(&config.rule_set) {
+                return Err(ContractError::InvalidRuleset {});
+            }
+            
+            // Calculate the possible payout amount for this game
             let calculated_payout = calculate_payout(game.bet_size.clone(), result[0], config.rule_set);
 
-            // If the player won, set the win flag to true and send the payout to the player
+            // The player won, set the win flag to true and send the payout to the player
             if game.win(game.bet_number) {
                 let payout_coin = Coin {
                     denom: config.token.to_string(),
@@ -271,15 +317,14 @@ pub fn execute(
                 return Ok(Response::new()
                 .add_message(payout_msg) 
                 .add_attribute("game", callback_data.game) 
+                .add_attribute("game_id", idx.u128().to_string())
                 .add_attribute("player", game.player)
                 .add_attribute("payout", calculated_payout.to_string())
-                .add_attribute("result", result[0].to_string())
-                .add_attribute("callbackdata.game", callback_data.game.to_string()))
+                .add_attribute("result", result[0].to_string()))
             } 
             // Player did NOT win the game (loss)
             else {
                 game.played = true; 
-                game.played = true;
                 game.win = Some(false);
                 game.payout = Uint128::zero();
                 game.result = Some(result);
@@ -309,6 +354,8 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             to_binary(&GameResponse {
                 idx,
                 player: game.player.clone(),
+                player_bet_number: game.bet_number.clone(),
+                player_bet_size: game.bet_size.clone(),
                 result: game.result.as_ref().map(|x| x.clone()),
                 win: game.win(game.bet_size),
                 entropy_requested: game.entropy_requested,
@@ -365,18 +412,16 @@ pub fn execute_validate_bet(
         return false;
     }
 
-    // Get the balance of the house bankroll (contract address balance)
-    // let bankroll_balance = deps.querier
-    // .query_balance(
-    //     env.contract.address.to_string()
-    //     , "ukuji".to_string()
-    //     )?;
+    // Ensure that the amount of funds sent by player matches bet size 
+    if coin.amount != player_bet_amount {
+        return false;
+    }
 
-
-    // Make sure the player's bet_amount does not exceed 10% of house bankroll
+    /* Make sure the player's bet_amount does not exceed 1% of house bankroll
+    Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
     if player_bet_amount
         > bankroll_balance.amount
-        .checked_div(Uint128::new(10))
+        .checked_div(Uint128::new(100))
         .unwrap() {
         return false;
     }

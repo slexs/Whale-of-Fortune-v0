@@ -82,6 +82,7 @@ sha2 = "0.10.0"
 cw20 = "1.0.1"
 cw20-base = "1.0.1"
 wasm = "0.0.0"
+hex = "0.4.3"
 
 
 [dev-dependencies]

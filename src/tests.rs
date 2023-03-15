@@ -1,57 +1,72 @@
-// mod tests {
-//     use super::*;
-//     use crate::contract::{self, instantiate, execute, query, execute_entropy_beacon_pull, execute_spin, execute_validate_bet};
-//     use crate::msg::{ EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg, };
-//     use crate::state::{RuleSet, CONFIG, IDX, Config, Game, GAME};
-//     use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
-//     use cw_utils::{PaymentError, one_coin};
-//     use kujira::denom::Denom;
-//     use std::ops::Mul;
-//     use std::time::Instant;
-//     // use cosmwasm_std::testing::{MockQuerier, mock_dependencies, mock_env, mock_info, BankQuerier};
-//     // use cosmwasm_std::{
-//     //     coins, from_binary, Addr, Api, BlockInfo, CosmosMsg, Env, MessageInfo, QueryResponse,
-//     //     StdError, Uint128, WasmMsg, Coin, BankMsg, Response, BankQuery, QuerierWrapper, StdResult, Querier,
-//     // };
-//     use cosmwasm_storage::{singleton, ReadonlySingleton, Singleton};
-//     // use rand::{RngCore, SeedableRng};
-//     use schemars::JsonSchema;
-//     use serde::{Deserialize, Serialize};
-//     // use sha3::Sha3_256;
-//     // use cw_multi_test::{next_block, App, AppResponse, Contract, ContractWrapper, Executor};
+mod tests {
+    use crate::state::RuleSet;
 
-//     use cosmwasm_std::testing::{mock_dependencies_with_balance, mock_dependencies, mock_env, mock_info, MockQuerier};
-//     use cosmwasm_std::{coins, QuerierWrapper, Empty, BankQuery, Coin, Uint128, BalanceResponse, QueryRequest, QueryResponse};
+    use super::*;
+    use cosmwasm_std::testing::{mock_dependencies_with_balance, mock_dependencies, mock_env, mock_info, MockQuerier};
+    use cosmwasm_std::{coins, QuerierWrapper, Empty, BankQuery, Coin, Uint128, BalanceResponse, QueryRequest, QueryResponse};
+    use hex; 
 
 
 
-// #[test]
-// fn env_testing() {
-//     //TODO: Need to query contract addr balance
-//     let mut deps = mock_dependencies();
-//     // let mut deps = mock_dependencies_with_balance(&coins(1000, "ukuji"));
-//     let info = mock_info("creator", &coins(1000, "ukuji"));
-//     let msg = InstantiateMsg { };
-//     let env = mock_env();
+#[test]
+fn test_entropy() {
 
-//     let balance = env.contract.address; 
-
-//     // Query contrat address balance 
-//     let bankroll = BankQuery::Balance {
-//         address: "creator".to_string(), 
-//         denom: "ukuji".to_string(), 
-//        };
-
-//     let query:QueryRequest<_> = QueryRequest::Bank(bankroll);
-//     // let response: QueryResponse = deps.querier.query(&query).unwrap();
-
+    let entropy = "5526d95ed7e4116ca292a8dc7f5df6e6add7af2d285537aee0ef8bff7c2492a09cdcdc035c4ed119598bcba5bf66fdc8051db4645f97b17aa736cf0cddd5117d"; 
     
+    fn is_valid_entropy(entropy: &str) -> bool {
+        if entropy.len() == 128 {
+            if let Ok(bytes) = hex::decode(entropy) {
+                if bytes.len() == 64 {
+                    return true; }}}
+        false
+    }
 
-//        let x = 0; 
+    assert!(is_valid_entropy(entropy));
+}
 
-//     }
+#[test]
+fn test_ruleset() {
+    let rule_set = RuleSet {
+        zero: Uint128::from(1u128), // 1:1
+        one: Uint128::from(3u128), // 3:1
+        two: Uint128::from(5u128), // 5:1
+        three: Uint128::from(10u128), // 10:1
+        four: Uint128::from(20u128), // 20:1
+        five: Uint128::from(45u128), // 45:1
+        six: Uint128::from(45u128), // 45:1 
+    };
 
-// }
+    fn validate_rules(rule_set: &RuleSet) -> bool {
+        if rule_set.zero.is_zero() || rule_set.one.is_zero() || rule_set.two.is_zero()
+            || rule_set.three.is_zero() || rule_set.four.is_zero() || rule_set.five.is_zero()
+            || rule_set.six.is_zero() {
+                return false
+        }
+    
+        let total_ratio: u128 = rule_set.zero.u128()
+            + rule_set.one.u128()
+            + rule_set.two.u128()
+            + rule_set.three.u128()
+            + rule_set.four.u128()
+            + rule_set.five.u128()
+            + rule_set.six.u128();
+        if total_ratio != 129 {
+            return false 
+        }
+        
+        true
+    }
+
+    assert!(validate_rules(&rule_set));
+}
+
+
+
+
+
+
+
+}
 
 
 
