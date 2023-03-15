@@ -1,0 +1,4 @@
+TODO: game_id not incremented on new pull 
+Keeps overwriting same GameID,  
+
+Maybe issue is with the entropyrequest, try to go back to previous version. 
