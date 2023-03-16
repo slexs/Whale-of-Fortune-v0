@@ -1,8 +1,5 @@
 use cosmwasm_schema::cw_serde;
 use cw_storage_plus::Map;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
 use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::Item;
 
@@ -23,6 +20,7 @@ pub struct Game {
     pub outcome: String,
     pub played: bool,
     pub win: bool,
+    pub payout: Coin, 
     pub rule_set: RuleSet,
 }
 

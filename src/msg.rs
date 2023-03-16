@@ -1,7 +1,6 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128};
+use cosmwasm_std::{Addr, Uint128, Coin};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
-use schemars::JsonSchema;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -29,7 +28,12 @@ pub enum QueryMsg {
 #[cw_serde]
 pub struct GameResponse {
     pub idx: Uint128,
-    pub outcome: String,
+    pub player: String,
+    pub bet_number: Uint128,
+    pub bet_size: Uint128,
+    pub payout: Coin,
+    pub game_outcome: String,
+    pub win: bool, 
 }
 
 #[cw_serde]

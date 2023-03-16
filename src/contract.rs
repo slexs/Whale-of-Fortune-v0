@@ -15,12 +15,12 @@ use crate::msg::{
 };
 use crate::state::{Game, RuleSet, State, GAME, IDX, STATE};
 
-use crate::helpers::{self, calculate_payout, execute_validate_bet, get_outcome_from_entropy};
+use crate::helpers::{calculate_payout, execute_validate_bet, get_outcome_from_entropy};
 
-use cw_storage_plus::Map;
+// use cw_storage_plus::Map;
 
 // version info for migration info
-const CONTRACT_NAME: &str = "entropiclabs/example-entropy-consumer";
+const CONTRACT_NAME: &str = "entropiclabs/Whale-of-fortune-v1.0.1";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Our [`InstantiateMsg`] contains the address of the entropy beacon contract.
@@ -93,6 +93,10 @@ pub fn execute(
                 outcome: "Pending".to_string(),
                 played: false,
                 win: false,
+                payout: Coin {
+                    denom: "ukuji".to_string(),
+                    amount: Uint128::zero(),
+                },
                 rule_set: RuleSet {
                     zero: Uint128::from(1u128),
                     one: Uint128::from(3u128),
@@ -136,6 +140,7 @@ pub fn execute(
         }
         // Here we handle receiving entropy from the beacon.
         ExecuteMsg::ReceiveEntropy(data) => {
+            // Load the game states from storage
             let state = STATE.load(deps.storage)?;
             let mut idx = IDX.load(deps.storage)?;
             let mut game = GAME.load(deps.storage, idx.into()).unwrap();
@@ -154,9 +159,10 @@ pub fn execute(
 
             // The callback data has 64 bytes of entropy, in a Vec<u8>.
             let entropy = data.entropy;
+
             // We can parse out our custom callback data from the message.
             let callback_data = data.msg;
-            let callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
+            let _callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
 
             let result = Some(get_outcome_from_entropy(&entropy.clone()));
 
@@ -167,28 +173,38 @@ pub fn execute(
 
             // Check if player has won
             if game.clone().win(game.bet_number.into(), outcome.clone()) {
-                // Set game win flag
+                
+                // Set game result flag
                 game.win = true;
                 game.played = true;
                 game.outcome = outcome[0].to_string();
 
+                // Calculate the player's payout
                 let calculated_payout = calculate_payout(
                     game.bet_size.clone().into(),
                     outcome[0],
                     game.rule_set.clone(),
                 );
 
+                // Create payout coin
                 let payout_coin = Coin {
                     denom: "ukuji".to_string(),
                     amount: calculated_payout,
                 };
 
-                let payout_msg = BankMsg::Send {
+                // Set payout in game state
+                game.payout = payout_coin.clone(); 
+
+                // Create payout message, send payout to player 
+                let _payout_msg = BankMsg::Send {
                     to_address: game.player.to_string(),
                     amount: vec![payout_coin],
                 };
 
+                // Save the game state 
                 GAME.save(deps.storage, idx.into(), &game)?;
+                
+                // Increment and save the game index state for the next game
                 idx = idx + Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
 
@@ -197,11 +213,16 @@ pub fn execute(
                     .add_attribute("game_outcome", game.outcome.to_string())
                     .add_attribute("game_payout", calculated_payout.to_string()));
             } else {
+
+                // Set game result flag 
                 game.win = false;
                 game.played = true;
                 game.outcome = outcome[0].to_string();
 
+                // Save the game state 
                 GAME.save(deps.storage, idx.into(), &game)?;
+                
+                // Increment and save the game index state for the next game
                 idx = idx + Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
 
@@ -221,7 +242,12 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             let game = GAME.load(deps.storage, idx.into()).unwrap();
             to_binary(&GameResponse {
                 idx: game.game_idx.into(),
-                outcome: game.outcome,
+                player: game.player,
+                bet_number: game.bet_number.into(),
+                bet_size: game.bet_size.into(),
+                game_outcome: game.outcome,
+                win: game.win,
+                payout: game.payout,
             })
         }
     }

@@ -1,8 +1,8 @@
-use cosmwasm_std::{Coin, DepsMut, Env, MessageInfo, Uint128};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128};
 use cw_utils::one_coin;
 use sha2::{Digest, Sha256};
 
-use crate::state::{RuleSet, State};
+use crate::state::{RuleSet};
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {
@@ -47,8 +47,6 @@ pub fn execute_validate_bet(
         Ok(balance) => balance,
         Err(_) => return false,
     };
-
-    let house_bankroll = bankroll_balance.clone();
 
     // Check that the players bet number is between 0 and 6
     if player_bet_number > Uint128::new(6) {
