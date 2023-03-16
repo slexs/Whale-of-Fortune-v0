@@ -33,13 +33,16 @@ pub fn instantiate(
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     // entropy beacon addr TESTNET harpoon-4
-    let entropy_beacon_addr_testnet = "kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"; 
+    // let entropy_beacon_addr = "kujira1xwz7fll64nnh4p9q8dyh9xfvqlwfppz4hqdn2uyq2fcmmqtnf5vsugyk7u"; 
+
+    // entropy beacon addr LOCALKUJI harpoon-2
+    let entropy_beacon_addr = "kujira14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sl4e867"; 
 
     // entropy beacon addr MAINNET kaiyo-1
-    // let entropy_beacon_addr_mainnet = "kujira1x623ehq3gqx9m9t8asyd9cgehf32gy94mhsw8l99cj3l2nvda2fqrjwqy5"; 
+    // let entropy_beacon_addr = "kujira1x623ehq3gqx9m9t8asyd9cgehf32gy94mhsw8l99cj3l2nvda2fqrjwqy5"; 
 
     // Validate the entropy beacon addr 
-    let validated_entropy_beacon_addr = deps.api.addr_validate(entropy_beacon_addr_testnet)?;
+    let validated_entropy_beacon_addr = deps.api.addr_validate(entropy_beacon_addr)?;
 
     // validate the owner's address
     let validated_owner_address: Addr = deps.api.addr_validate(info.sender.as_ref())?;
@@ -131,13 +134,15 @@ pub fn execute(
         ExecuteMsg::Pull { bet_number } => {
             // Load the game config 
             let config = CONFIG.load(deps.storage)?;
+
+            let coin = one_coin(&info)?; 
         
             // Check that players bet amount is <= 10% of house bankroll, bet num [0, 6], denom etc
             if !execute_validate_bet(
                 &deps, 
                 &env, 
                 info.clone(), 
-                info.funds[0].amount, 
+                coin.amount, 
                 bet_number) {
                     return Err(ContractError::InvalidBet {});
                 }
@@ -149,7 +154,7 @@ pub fn execute(
             let game = Game {
                 player: info.sender.clone(),
                 bet_number: bet_number,
-                bet_size: info.funds[0].amount,
+                bet_size: coin.amount,
                 payout: Uint128::zero(), // Payout not yet decided in this step
                 result: None,
                 played: false,
