@@ -1,0 +1,22 @@
+Semantic Versioning (SemVec)
+
+ follows a specific format that consists of three numbers separated by periods: 
+ MAJOR.MINOR.PATCH (for example, v1.0.0). 
+ Each of these numbers represents a different level of change in the software:
+
+MAJOR: 
+This number is incremented when there are significant or breaking changes in the software. 
+A change is considered breaking if it affects the way users interact with the software, 
+or if it alters the software's behavior in an incompatible manner. 
+Upgrading to a new major version may require users to adjust their code, configurations, or usage patterns.
+
+MINOR: 
+This number is incremented when new functionality is added in a backwards-compatible manner. 
+Backwards compatibility means that existing users of the software should not experience any disruption or 
+need to make changes when upgrading to a new minor version. 
+New features or enhancements are added without affecting the existing functionality.
+
+PATCH: 
+This number is incremented when bug fixes or small improvements are made in a backwards-compatible way. 
+Patch releases typically address issues that have been discovered in the software and do not introduce new features or functionality. 
+Upgrading to a new patch version should be safe and seamless for existing users.
