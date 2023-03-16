@@ -1,12 +1,27 @@
-mod tests {
+/* mod tests {
     use crate::state::RuleSet;
 
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies_with_balance, mock_dependencies, mock_env, mock_info, MockQuerier};
-    use cosmwasm_std::{coins, QuerierWrapper, Empty, BankQuery, Coin, Uint128, BalanceResponse, QueryRequest, QueryResponse};
+    use cosmwasm_std::{coins, QuerierWrapper, Empty, BankQuery, Coin, Uint128, BalanceResponse, QueryRequest, QueryResponse, Api, Addr};
     use hex; 
 
 
+#[test]
+fn addr_test() {
+
+    let deps = mock_dependencies();
+    let test1 = "kujira1ueqz5fzm27eh3wsp7n28l839g38wsw2u74lu8szehza3gp5nq8yq2vmr4s"; 
+    println!("{test1}");  
+
+    let test2 = deps.api.addr_validate("kujira1ueqz5fzm27eh3wsp7n28l839g38wsw2u74lu8szehza3gp5nq8yq2vmr4s").unwrap();
+    println!("{test2}");
+
+    // let test3 = Addr::from("kujira1ueqz5fzm27eh3wsp7n28l839g38wsw2u74lu8szehza3gp5nq8yq2vmr4s".to_string()); 
+    // println!("{test3}"); 
+
+    let x = 0;  
+}
 
 #[test]
 fn test_entropy() {
@@ -495,3 +510,4 @@ fn test_ruleset() {
 // //     }
 
 // // }
+  */

@@ -48,16 +48,19 @@ pub fn instantiate(
     let kuji_denom = "ukuji".to_string(); 
 
     // Set the house bankroll, initialized to zero 
-    let house_bankroll = Coin {
-        denom: kuji_denom.clone(),
-        amount: Uint128::zero(),
-    };
+    // let house_bankroll = Coin {
+    //     denom: kuji_denom.clone(),
+    //     amount: Uint128::zero(),
+    // };
 
     // Initialize Config
     let config = Config {
-        entropy_beacon_addr: validated_entropy_beacon_addr, // The entropy beacon contract address
-        owner_addr: validated_owner_address, // The owner of the contract 
-        house_bankroll, // House bankroll denom and amount 
+        entropy_beacon_addr: Addr::from(validated_entropy_beacon_addr), // The entropy beacon contract address
+        owner_addr: Addr::from(validated_owner_address), // The owner of the contract 
+        house_bankroll: Coin {
+            denom: kuji_denom.clone(),
+            amount: Uint128::zero(), 
+        }, // House bankroll denom and amount 
         token: Denom::from(kuji_denom.clone()), // Init token to ukuji
         fee_amount: Uint128::zero(), // beacon fee amount 
         rule_set: RuleSet { // Payout ratios
@@ -139,7 +142,6 @@ pub fn execute(
                     return Err(ContractError::InvalidBet {});
                 }
 
-        
             // Get the current gameID
             let idx = IDX.load(deps.storage)?;
         
@@ -163,24 +165,39 @@ pub fn execute(
             let callback_gas_limit = 100_000u64;
         
             // Calculate the fee for requesting entropy from the beacon (subsidized on Kujira)
-            let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?;
+            let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, config.entropy_beacon_addr.clone())?; 
+
+            let validated_sender_addr = deps.api.addr_validate(&info.sender.to_string())?;
         
-            // Create a request for entropy from the Beacon contract
+            // Ok(Response::new().add_message(
+            //     EntropyRequest {
+            //         callback_gas_limit,
+            //         callback_address: env.contract.address,
+            //         funds: vec![Coin {
+            //             denom: "ukuji".to_string(),
+            //             amount: Uint128::from(1000u128),
+            //         }],
+            //         // A custom struct and data we define for callback info.
+            //         // You should change this callback message struct to match the information your contract needs.
+            //         callback_msg: EntropyCallbackData {
+            //             original_sender: validated_sender_addr,
+            //             game: idx, 
+            //         },
+            //     }
+            //     .into_cosmos(config.entropy_beacon_addr)?,
+            // )
+
             let mut msgs = vec![EntropyRequest {
-                callback_gas_limit, 
-                callback_address: env.contract.address.clone(),
-                funds: vec![Coin {
-                    denom: config.token.to_string(),
-                    amount: Uint128::from(beacon_fee),
-                }],
+                callback_gas_limit: 100_000u64,
+                callback_address: env.contract.address,
+                funds: vec![],
                 callback_msg: EntropyCallbackData {
                     original_sender: info.sender,
                     game: idx,
                 },
-            }.into_cosmos(config.entropy_beacon_addr)?]; 
-            // .into_cosmos() Removes funds with zero amount to avoid bank errors.
-        
-            // If there is a beacon fee, send it to the fee address
+            }
+            .into_cosmos(config.entropy_beacon_addr)?];
+
             if !config.fee_amount.is_zero() {
                 msgs.push(CosmosMsg::Bank(BankMsg::Send {
                     to_address: kujira::utils::fee_address().to_string(),
@@ -188,39 +205,16 @@ pub fn execute(
                 }))
             };
 
-            // Transfer player bet amount to the contract address
-            let _player_deposit_msg: BankMsg = BankMsg::Send {
-                to_address: env.contract.address.to_string(),
-                amount: config.token.coins(&game.bet_size),
-            };
-       /*  
-            Ok(Response::new().add_message(
-                EntropyRequest {
-                    callback_gas_limit,
-                    callback_address: env.contract.address,
-                    funds: vec![Coin {
-                        denom: "ukuji".to_string(),
-                        amount: Uint128::from(1000u128),
-                    }],
-                    // A custom struct and data we define for callback info.
-                    // You should change this callback message struct to match the information your contract needs.
-                    callback_msg: EntropyCallbackData {
-                        original_sender: Addr::unchecked(info.sender),
-                        game: idx, 
-                    },
-                }
-                .into_cosmos(config.entropy_beacon_addr)?,
-            )) */
-
             Ok(Response::new()
-            .add_attribute("game", idx)
-            .add_attribute("game_id", idx)
-            .add_attribute("player", game.player)
-            .add_attribute("bet_number", game.bet_number)
-            .add_attribute("bet_size", game.bet_size)
-            .add_attribute("beacon_fee", beacon_fee.to_string())
-            .add_attribute("callback_gas_limit", callback_gas_limit.to_string())
-            .add_messages(msgs))
+                .add_messages(msgs)
+                .add_attribute("game_id", idx)
+                .add_attribute("player", game.player)
+                .add_attribute("bet_number", game.bet_number)
+                .add_attribute("bet_size", game.bet_size)
+                .add_attribute("beacon_fee", beacon_fee.to_string())
+                .add_attribute("callback_gas_limit", callback_gas_limit.to_string())
+            
+            )
         
         },
 
@@ -270,7 +264,7 @@ pub fn execute(
             let callback_data: EntropyCallbackData = from_binary(&callback_data)?;
 
             // Get the result [0:6] from the entropy
-            game.result = Some(get_outcome_from_entropy(&entropy));
+            game.result = Some(get_outcome_from_entropy(&entropy.clone()));
             let result = game.result.clone().unwrap();
            
 
@@ -314,7 +308,7 @@ pub fn execute(
                 // Increment GameID for the next game 
                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
 
-                return Ok(Response::new()
+                Ok(Response::new()
                 .add_message(payout_msg) 
                 .add_attribute("game", callback_data.game) 
                 .add_attribute("game_id", idx.u128().to_string())
