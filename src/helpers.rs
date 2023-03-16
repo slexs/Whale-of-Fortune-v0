@@ -1,59 +1,86 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use cosmwasm_std::{Coin, DepsMut, Env, MessageInfo, Uint128};
+use cw_utils::one_coin;
+use sha2::{Digest, Sha256};
 
-use cosmwasm_std::{to_binary, Addr, CosmosMsg, StdResult, WasmMsg};
+use crate::state::{RuleSet, State};
 
-use crate::{msg::ExecuteMsg, state::RuleSet};
-
-/// CwTemplateContract is a wrapper around Addr that provides a lot of helpers
-/// for working with this.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct CwTemplateContract(pub Addr);
-
-impl CwTemplateContract {
-    pub fn addr(&self) -> Addr {
-        self.0.clone()
-    }
-
-    pub fn call<T: Into<ExecuteMsg>>(&self, msg: T) -> StdResult<CosmosMsg> {
-        let msg = to_binary(&msg.into())?;
-        Ok(WasmMsg::Execute {
-            contract_addr: self.addr().into(),
-            msg,
-            funds: vec![],
-        }
-        .into())
+pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
+    match outcome {
+        0 => bet_amount * rule_set.zero,
+        1 => bet_amount * rule_set.one,
+        2 => bet_amount * rule_set.two,
+        3 => bet_amount * rule_set.three,
+        4 => bet_amount * rule_set.four,
+        5 => bet_amount * rule_set.five,
+        6 => bet_amount * rule_set.six,
+        _ => Uint128::zero(),
     }
 }
 
-pub fn is_valid_entropy(entropy: &str) -> bool {
-    if entropy.len() == 128 {
-        if let Ok(bytes) = hex::decode(entropy) {
-            if bytes.len() == 64 {
-                return true;
-            }
-        }
-    }
-    false
+// Take the entropy and return a random number between 0 and 6
+pub fn get_outcome_from_entropy(entropy: &[u8]) -> Vec<u8> {
+    // Hash the input entropy using SHA256
+    let mut hasher = Sha256::new();
+    hasher.update(entropy);
+    let hash_result = hasher.finalize();
+
+    // Use the last byte of the hash as the random number
+    let random_byte = hash_result[hash_result.len() - 1];
+
+    // Map the random byte to a number between 0 and 6
+    let outcome = random_byte % 7;
+    vec![outcome]
 }
 
-pub fn validate_ruleset(rule_set: &RuleSet) -> bool {
-    if rule_set.zero.is_zero() || rule_set.one.is_zero() || rule_set.two.is_zero()
-        || rule_set.three.is_zero() || rule_set.four.is_zero() || rule_set.five.is_zero()
-        || rule_set.six.is_zero() {
-            return false
+pub fn execute_validate_bet(
+    deps: &DepsMut,
+    env: &Env,
+    info: MessageInfo,
+    player_bet_amount: Uint128,
+    player_bet_number: Uint128,
+) -> bool {
+    // Get the balance of the house bankroll (contract address balance)
+    let bankroll_balance = match deps
+        .querier
+        .query_balance(env.contract.address.to_string(), "ukuji".to_string())
+    {
+        Ok(balance) => balance,
+        Err(_) => return false,
+    };
+
+    let house_bankroll = bankroll_balance.clone();
+
+    // Check that the players bet number is between 0 and 6
+    if player_bet_number > Uint128::new(6) {
+        return false;
     }
 
-    let total_ratio: u128 = rule_set.zero.u128()
-        + rule_set.one.u128()
-        + rule_set.two.u128()
-        + rule_set.three.u128()
-        + rule_set.four.u128()
-        + rule_set.five.u128()
-        + rule_set.six.u128();
-    if total_ratio != 129 {
-        return false 
+    // Check that only one denom was sent
+    let coin = match one_coin(&info) {
+        Ok(coin) => coin,
+        Err(_) => return false,
+    };
+
+    // Check that the denom is the same as the token in the bankroll ("ukuji")
+    if coin.denom != bankroll_balance.denom {
+        return false;
     }
-    
+
+    // Ensure that the amount of funds sent by player matches bet size
+    if coin.amount != player_bet_amount {
+        return false;
+    }
+
+    /* Make sure the player's bet_amount does not exceed 1% of house bankroll
+    Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
+    if player_bet_amount
+        > bankroll_balance
+            .amount
+            .checked_div(Uint128::new(100))
+            .unwrap()
+    {
+        return false;
+    }
+
     true
 }
