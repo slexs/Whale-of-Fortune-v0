@@ -159,7 +159,8 @@ pub fn execute(
             };
         
             // Save the current game state to the contract
-            GAME.save(deps.storage, idx.u128(), &game)?;
+            // GAME.save(deps.storage, idx.u128(), &game)?;
+            GAME.save(deps.storage, &game)?;
             
             // Set the callback gas limit for the entropy request
             let callback_gas_limit = 100_000u64;
@@ -229,7 +230,8 @@ pub fn execute(
             let idx = IDX.load(deps.storage)?;
             
             // Load game state with current game index
-            let mut game = GAME.load(deps.storage, idx.u128())?;
+            // let mut game = GAME.load(deps.storage, idx.u128())?;
+            let mut game = GAME.load(deps.storage)?;
 
             // Check that the game at the current index has not already been played
             if game.played {
@@ -303,8 +305,8 @@ pub fn execute(
                 game.played = true;
                 game.payout = calculated_payout;
                 game.result = Some(result.clone());
-                GAME.save(deps.storage, idx.u128(), &game)?;
-
+                // GAME.save(deps.storage, idx.u128(), &game)?;
+                GAME.save(deps.storage, &game)?;
                 // Increment GameID for the next game 
                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
 
@@ -322,7 +324,8 @@ pub fn execute(
                 game.win = Some(false);
                 game.payout = Uint128::zero();
                 game.result = Some(result);
-                GAME.save(deps.storage, idx.u128(), &game)?;
+                // GAME.save(deps.storage, idx.u128(), &game)?;
+                GAME.save(deps.storage, &game)?;
 
                 // Increment gameID for the next game
                 IDX.save(deps.storage, &(idx + Uint128::from(1u128)))?;
@@ -343,7 +346,8 @@ pub fn execute(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Game { idx } => {
-            let game = GAME.load(deps.storage, idx.u128())?;
+            // let game = GAME.load(deps.storage, idx.u128())?;
+            let game = GAME.load(deps.storage)?;
 
             to_binary(&GameResponse {
                 idx,

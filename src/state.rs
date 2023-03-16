@@ -74,5 +74,6 @@ pub struct EntropyCallbackData {
 }
 
 pub const IDX: Item<Uint128> = Item::new("idx");
-pub const GAME: Map<u128, Game> = Map::new("game");
+// pub const GAME: Map<u128, Game> = Map::new("game");
+pub const GAME: Item<Game> = Item::new("game");
 pub const CONFIG: Item<Config> = Item::new("state");
