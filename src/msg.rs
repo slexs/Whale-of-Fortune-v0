@@ -31,6 +31,7 @@ pub struct GameResponse {
     pub player: String,
     pub bet_number: Uint128,
     pub bet_size: Uint128,
+    pub played: bool, 
     pub payout: Coin,
     pub game_outcome: String,
     pub win: bool, 

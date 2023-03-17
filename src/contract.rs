@@ -190,7 +190,7 @@ pub fn execute(
 
 
             // Check if player has won
-            if game.win(game.bet_number.into(), outcome.clone()) {
+            if game.is_winner(game.bet_number.into(), outcome.clone()) {
                 
                 // Set game result flag
                 game.win = true;
@@ -273,6 +273,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 player: game.player,
                 bet_number: game.bet_number.into(),
                 bet_size: game.bet_size.into(),
+                played: game.played,
                 game_outcome: game.outcome,
                 win: game.win,
                 payout: game.payout,

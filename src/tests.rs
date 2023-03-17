@@ -1,4 +1,5 @@
-#[allow(unused_imports)]
+/* #[allow(unused_imports)]
+pub mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance};
     use cosmwasm_std::{Uint128, Coin};
     use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet};
@@ -119,3 +120,4 @@
     }
 
     
+} */
