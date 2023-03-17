@@ -18,29 +18,58 @@ pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> 
 }
 
 // Take the entropy and return a random number between 0 and 6
-pub fn get_outcome_from_entropy(entropy: &[u8]) -> Vec<u8> {
-    // Check that the entropy is not empty
-    if entropy.is_empty() {
-        return vec![];
+pub fn get_outcome_from_entropy(entropy: &Vec<u8>, rule_set: &RuleSet) -> Option<Vec<u8>> {
+    // Calculate the total weight (sum of frequencies)
+    let total_weight = rule_set.zero
+        + rule_set.one
+        + rule_set.two
+        + rule_set.three
+        + rule_set.four
+        + rule_set.five
+        + rule_set.six;
+
+   // Convert the entropy into a number between 0 and total_weight - 1
+   let entropy_number_raw = u32::from_be_bytes(entropy[..4].try_into().unwrap());
+   let entropy_number = Uint128::from(entropy_number_raw) % total_weight;
+
+
+    // Determine the outcome based on the weighted random approach
+    let mut outcome = 0;
+    let mut weight_sum = rule_set.zero;
+
+    if entropy_number < weight_sum {
+        outcome = 0;
+    } else {
+        weight_sum += rule_set.one;
+        if entropy_number < weight_sum {
+            outcome = 1;
+        } else {
+            weight_sum += rule_set.two;
+            if entropy_number < weight_sum {
+                outcome = 2;
+            } else {
+                weight_sum += rule_set.three;
+                if entropy_number < weight_sum {
+                    outcome = 3;
+                } else {
+                    weight_sum += rule_set.four;
+                    if entropy_number < weight_sum {
+                        outcome = 4;
+                    } else {
+                        weight_sum += rule_set.five;
+                        if entropy_number < weight_sum {
+                            outcome = 5;
+                        } else {
+                            outcome = 6;
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // Check that the entropy is the correct length
-    const EXPECTED_ENTROPY_LENGTH: usize = 64;
-    if entropy.len() != EXPECTED_ENTROPY_LENGTH {
-        return vec![];
-    } 
-
-    // Hash the input entropy using SHA256
-    let mut hasher = Sha256::new();
-    hasher.update(entropy);
-    let hash_result = hasher.finalize();
-
-    // Use the last byte of the hash as the random number
-    let random_byte = hash_result[hash_result.len() - 1];
-
-    // Map the random byte to a number between 0 and 6
-    let outcome = random_byte % 7;
-    vec![outcome]
+    // Return the outcome as a single-element vector
+    Some(vec![outcome])
 }
 
 pub fn execute_validate_bet(

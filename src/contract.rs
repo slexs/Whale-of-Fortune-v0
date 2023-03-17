@@ -97,15 +97,15 @@ pub fn execute(
                     amount: Uint128::zero(),
                 },
                 rule_set: RuleSet {
-                    zero: Uint128::from(1u128),
-                    one: Uint128::from(3u128),
-                    two: Uint128::from(5u128),
-                    three: Uint128::from(10u128),
-                    four: Uint128::from(20u128),
-                    five: Uint128::from(45u128),
-                    six: Uint128::from(45u128),
-                },
-            };
+                        zero: 24,
+                        one: 12,
+                        two: 8,
+                        three: 4,
+                        four: 2,
+                        five: 1,
+                        six: 1,
+                    },
+                };
 
             // Validate game bet
             if !execute_validate_bet(
