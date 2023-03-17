@@ -1,9 +1,7 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response,
-    StdResult, Uint128,
-};
+    from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, Uint128};
 use cw2::set_contract_version;
 
 use entropy_beacon_cosmos::beacon::CalculateFeeQuery;
@@ -49,7 +47,8 @@ pub fn instantiate(
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("entropy_beacon_addr", msg.entropy_beacon_addr.to_string()))
+        .add_attribute("entropy_beacon_addr", msg.entropy_beacon_addr.to_string())
+        .add_attribute("state", format!("{:?}", state)))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -86,7 +85,7 @@ pub fn execute(
 
             // Create a new game state
             let game = Game {
-                player: info.sender.clone().to_string(),
+                player: info.sender.to_string(),
                 game_idx: idx.into(),
                 bet_number: bet_number.into(),
                 bet_size: sent_amount.into(),
@@ -113,8 +112,8 @@ pub fn execute(
                 &deps,
                 &env,
                 info.clone(),
-                Uint128::new(game.bet_size.into()),
-                Uint128::new(game.bet_number.into()),
+                Uint128::new(game.bet_size),
+                Uint128::new(game.bet_number),
             ) {
                 return Err(ContractError::InvalidBet {});
             }
@@ -149,12 +148,18 @@ pub fn execute(
 
             // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
             if info.sender != beacon_addr {
-                return Err(ContractError::CallBackCallerError {});
+                return Err(ContractError::CallBackCallerError { 
+                    caller: info.sender.to_string(), 
+                    expected: beacon_addr.to_string() 
+                });
             }
 
             // IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
             if data.requester != env.contract.address {
-                return Err(ContractError::EntropyRequestError {});
+                return Err(ContractError::EntropyRequestError {
+                    requester: data.requester.to_string(),
+                    trusted: env.contract.address.to_string(),
+                });
             }
 
             // The callback data has 64 bytes of entropy, in a Vec<u8>.
@@ -164,15 +169,28 @@ pub fn execute(
             let callback_data = data.msg;
             let _callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
 
-            let result = Some(get_outcome_from_entropy(&entropy.clone()));
+            let result = Some(get_outcome_from_entropy(&entropy));
+            
+            // Check if result is None, throw error if so 
+            if result.is_none() {
+                return Err(ContractError::InvalidEntropyResult { result: format!("{:?}", result) });
+            }
 
+            // Unwrap the result
             let outcome = result.unwrap();
 
+            // Check if result is empty, throw error if so
+            if outcome.is_empty() {
+                return Err(ContractError::InvalidEntropyResult { result: format!("{:?}", outcome) });
+            }
+
+            // Set the outcome in the game state
             game.outcome = outcome[0].to_string();
             GAME.save( deps.storage, idx.into(), &game)?;
 
+
             // Check if player has won
-            if game.clone().win(game.bet_number.into(), outcome.clone()) {
+            if game.win(game.bet_number.into(), outcome.clone()) {
                 
                 // Set game result flag
                 game.win = true;
@@ -181,7 +199,7 @@ pub fn execute(
 
                 // Calculate the player's payout
                 let calculated_payout = calculate_payout(
-                    game.bet_size.clone().into(),
+                    game.bet_size.into(),
                     outcome[0],
                     game.rule_set.clone(),
                 );
@@ -205,12 +223,12 @@ pub fn execute(
                 GAME.save(deps.storage, idx.into(), &game)?;
                 
                 // Increment and save the game index state for the next game
-                idx = idx + Uint128::new(1);
+                idx += Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
 
                 return Ok(Response::new()
                     .add_attribute("game_result", game.win.to_string())
-                    .add_attribute("game_outcome", game.outcome.to_string())
+                    .add_attribute("game_outcome", game.outcome)
                     .add_attribute("game_payout", calculated_payout.to_string()));
             } else {
 
@@ -223,23 +241,33 @@ pub fn execute(
                 GAME.save(deps.storage, idx.into(), &game)?;
                 
                 // Increment and save the game index state for the next game
-                idx = idx + Uint128::new(1);
+                idx += Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
 
                 return Ok(Response::new()
                     .add_attribute("game_result", game.win.to_string())
-                    .add_attribute("game_outcome", game.outcome.to_string())
+                    .add_attribute("game_outcome", game.outcome)
                     .add_attribute("game_payout", Uint128::new(0).to_string()));
             }
         }
+    
     }
 }
 
+// Entry point for query messages to the contract 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
+    // Match the incomming query message aginst the supported query types 
     match msg {
+        // If msg is a request for game information at a specific index 
         QueryMsg::Game { idx } => {
-            let game = GAME.load(deps.storage, idx.into()).unwrap();
+            // Load the game state with the provided index
+            // If game idx is not found, handle error gracefully and return a custom error message
+            let game = GAME.load(deps.storage, idx.into())
+                .map_err(|_| ContractError::GameNotFound(idx))?; // Handle the error gracefully
+
+            // Serialize the game response into a binary format 
+            // if error occurs during serialization, handle error gracefully and return a custom error
             to_binary(&GameResponse {
                 idx: game.game_idx.into(),
                 player: game.player,
@@ -248,7 +276,8 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
                 game_outcome: game.outcome,
                 win: game.win,
                 payout: game.payout,
-            })
+            }).map_err(|e| 
+                ContractError::QueryError(format!("Serialization error: {}", e)))
         }
     }
 }

@@ -6,19 +6,30 @@ use crate::state::{RuleSet};
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {
-        0 => bet_amount * rule_set.zero,
-        1 => bet_amount * rule_set.one,
-        2 => bet_amount * rule_set.two,
-        3 => bet_amount * rule_set.three,
-        4 => bet_amount * rule_set.four,
-        5 => bet_amount * rule_set.five,
-        6 => bet_amount * rule_set.six,
+        0 => bet_amount.checked_mul(rule_set.zero).unwrap_or(Uint128::zero()),
+        2 => bet_amount.checked_mul(rule_set.two).unwrap_or(Uint128::zero()),
+        1 => bet_amount.checked_mul(rule_set.one).unwrap_or(Uint128::zero()),
+        3 => bet_amount.checked_mul(rule_set.three).unwrap_or(Uint128::zero()),
+        4 => bet_amount.checked_mul(rule_set.four).unwrap_or(Uint128::zero()),
+        5 => bet_amount.checked_mul(rule_set.five).unwrap_or(Uint128::zero()),
+        6 => bet_amount.checked_mul(rule_set.six).unwrap_or(Uint128::zero()),
         _ => Uint128::zero(),
     }
 }
 
 // Take the entropy and return a random number between 0 and 6
 pub fn get_outcome_from_entropy(entropy: &[u8]) -> Vec<u8> {
+    // Check that the entropy is not empty
+    if entropy.is_empty() {
+        return vec![];
+    }
+
+    // Check that the entropy is the correct length
+    const EXPECTED_ENTROPY_LENGTH: usize = 64;
+    if entropy.len() != EXPECTED_ENTROPY_LENGTH {
+        return vec![];
+    } 
+
     // Hash the input entropy using SHA256
     let mut hasher = Sha256::new();
     hasher.update(entropy);
@@ -66,6 +77,11 @@ pub fn execute_validate_bet(
 
     // Ensure that the amount of funds sent by player matches bet size
     if coin.amount != player_bet_amount {
+        return false;
+    }
+
+    // Check that the players bet amount is not zero 
+    if coin.amount <= Uint128::new(0) || coin.amount.is_zero(){
         return false;
     }
 
