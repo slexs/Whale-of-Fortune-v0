@@ -6,20 +6,23 @@ use crate::state::{RuleSet};
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {
-        0 => bet_amount.checked_mul(rule_set.zero).unwrap_or(Uint128::zero()),
-        2 => bet_amount.checked_mul(rule_set.two).unwrap_or(Uint128::zero()),
-        1 => bet_amount.checked_mul(rule_set.one).unwrap_or(Uint128::zero()),
-        3 => bet_amount.checked_mul(rule_set.three).unwrap_or(Uint128::zero()),
-        4 => bet_amount.checked_mul(rule_set.four).unwrap_or(Uint128::zero()),
-        5 => bet_amount.checked_mul(rule_set.five).unwrap_or(Uint128::zero()),
-        6 => bet_amount.checked_mul(rule_set.six).unwrap_or(Uint128::zero()),
+        0 => bet_amount.checked_mul(Uint128::new(1)).unwrap_or(Uint128::zero()),
+        1 => bet_amount.checked_mul(Uint128::new(3)).unwrap_or(Uint128::zero()),
+        2 => bet_amount.checked_mul(Uint128::new(5)).unwrap_or(Uint128::zero()),
+        3 => bet_amount.checked_mul(Uint128::new(10)).unwrap_or(Uint128::zero()),
+        4 => bet_amount.checked_mul(Uint128::new(20)).unwrap_or(Uint128::zero()),
+        5 => bet_amount.checked_mul(Uint128::new(45)).unwrap_or(Uint128::zero()),
+        6 => bet_amount.checked_mul(Uint128::new(45)).unwrap_or(Uint128::zero()),
         _ => Uint128::zero(),
     }
 }
 
+// Distribute outcomes according to the frequency of each sector in the Big Six wheel game 
 // Take the entropy and return a random number between 0 and 6
-pub fn get_outcome_from_entropy(entropy: &Vec<u8>, rule_set: &RuleSet) -> Option<Vec<u8>> {
+// Designed to generate a random outcome 
+pub fn get_outcome_from_entropy(entropy: &Vec<u8>, rule_set: &RuleSet) -> Vec<u8> {
     // Calculate the total weight (sum of frequencies)
+    // by summing the weight of all possible outcomes 
     let total_weight = rule_set.zero
         + rule_set.one
         + rule_set.two
@@ -29,11 +32,15 @@ pub fn get_outcome_from_entropy(entropy: &Vec<u8>, rule_set: &RuleSet) -> Option
         + rule_set.six;
 
    // Convert the entropy into a number between 0 and total_weight - 1
+   // This is done by first extracting the first 4 bytes of the entropy vector 
+   // then converting them to a u32 integer, then calculating the remainer when dividing by the total weight 
    let entropy_number_raw = u32::from_be_bytes(entropy[..4].try_into().unwrap());
    let entropy_number = Uint128::from(entropy_number_raw) % total_weight;
 
 
     // Determine the outcome based on the weighted random approach
+    // by checking which range the entropy number falls into based on the cumulative weights of the outcome 
+    // similar to spinning a wheel with different sized sectors representing the weight of each outcome 
     let mut outcome = 0;
     let mut weight_sum = rule_set.zero;
 
@@ -69,7 +76,7 @@ pub fn get_outcome_from_entropy(entropy: &Vec<u8>, rule_set: &RuleSet) -> Option
     }
 
     // Return the outcome as a single-element vector
-    Some(vec![outcome])
+    vec![outcome]
 }
 
 pub fn execute_validate_bet(

@@ -97,13 +97,13 @@ pub fn execute(
                     amount: Uint128::zero(),
                 },
                 rule_set: RuleSet {
-                        zero: 24,
-                        one: 12,
-                        two: 8,
-                        three: 4,
-                        four: 2,
-                        five: 1,
-                        six: 1,
+                        zero: Uint128::new(24),
+                        one: Uint128::new(12),
+                        two: Uint128::new(8),
+                        three: Uint128::new(4),
+                        four: Uint128::new(2),
+                        five: Uint128::new(1),
+                        six: Uint128::new(1),
                     },
                 };
 
@@ -169,7 +169,7 @@ pub fn execute(
             let callback_data = data.msg;
             let _callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
 
-            let result = Some(get_outcome_from_entropy(&entropy));
+            let result = Some(get_outcome_from_entropy(&entropy, &game.rule_set));
             
             // Check if result is None, throw error if so 
             if result.is_none() {

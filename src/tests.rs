@@ -29,35 +29,46 @@ pub mod tests {
 
     #[test]
     fn test_get_outcome_from_entropy() {
+
+        let rule_set =  RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        }; 
+
         // Valid, entropy will result in result = 0
         let entropy = hex::decode("68b7cfd0fcfd3564359318426bea7f203ebc8687bda140645d60caaf79b6b18b9e8d9c93e62f2b2e138c520253b96c23800b2f82274586a4b5f246a3479a5715").unwrap();
-        let outcome = get_outcome_from_entropy(&entropy);
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
         assert!(outcome.len() == 1);
         assert!(outcome[0] <= 6);
         assert!(outcome[0] == 0);
 
         // Valid, entropy will result in result = 4
         let entropy = hex::decode("54c86044dfdd18902279243ce80741ab186cba4027c137fab649b861fb328da77b3bebe62783c76b96fc34381a855f9383d9d20ff83fbc3ecbab7c90d1b597ba").unwrap();
-        let outcome = get_outcome_from_entropy(&entropy);
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
         assert!(outcome.len() == 1);
         assert!(outcome[0] <= 6);
         assert!(outcome[0] == 4);
 
         // Test entropy with empty input 
         let entropy = hex::decode("").unwrap();
-        let outcome = get_outcome_from_entropy(&entropy);
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
         assert!(outcome.len() == 0);
         assert!(outcome.is_empty()); 
 
         // Test entropy with shorter than expected input 
         let entropy = hex::decode("68b7cfd0fcfd3564359318426bea7f203ebc8687bda14063").unwrap();
-        let outcome = get_outcome_from_entropy(&entropy);
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
         assert!(outcome.len() == 0);
         assert!(outcome.is_empty());
 
         // Test entropy with too long input
         let entropy = hex::decode("68b7cfd0fcfd3564359318426bea7f203ebc8687bda140645d60caaf79b6b18b9e8d9c93e62f2b2e138c520253b96c23800b2f82274586a4b5f246a3479a571568b7cfd0fcfd3564359318426bea7f203ebc8687bda140645d60caaf79b6b18b9e8d9c93e62f2b2e138c520253b96c23800b2f82274586a4b5f246a3479a5715").unwrap();
-        let outcome = get_outcome_from_entropy(&entropy);
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
         assert!(outcome.len() == 0);
         assert!(outcome.is_empty());
         
