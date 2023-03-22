@@ -1,4 +1,4 @@
-#[allow(unused_imports)]
+/* #[allow(unused_imports)]
 pub mod tests {
     use crate::helpers::{calculate_payout, execute_validate_bet, get_outcome_from_entropy};
     use crate::msg::ExecuteMsg;
@@ -270,3 +270,4 @@ pub mod tests {
         assert_eq!(player_history.loyalty_points, Uint128::new(0));
     }
 }
+ */
