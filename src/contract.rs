@@ -4,6 +4,7 @@ use cosmwasm_std::{
     from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, Uint128};
 use cw2::set_contract_version;
 
+use cw_utils::one_coin;
 use entropy_beacon_cosmos::beacon::CalculateFeeQuery;
 use entropy_beacon_cosmos::EntropyRequest;
 
@@ -107,8 +108,8 @@ pub fn execute(
                     },
                 };
 
-            // Validate game bet
-            if !execute_validate_bet(
+            // Validate game bet //TODO: Replace with more verbose error messages
+           /*  if !execute_validate_bet(
                 &deps,
                 &env,
                 info.clone(),
@@ -116,6 +117,70 @@ pub fn execute(
                 Uint128::new(game.bet_number),
             ) {
                 return Err(ContractError::InvalidBet {});
+            } */
+
+            // Get the balance of the house bankroll (contract address balance)
+            let bankroll_balance = deps
+                .querier
+                .query_balance(env.contract.address.to_string(), "ukuji".to_string());
+
+            if bankroll_balance.is_err() {
+                return Err(ContractError::ValidateBetUnableToGetBankrollBalance {
+                    addr: env.contract.address.to_string(),
+                });
+            }
+
+            // unwrap the bankroll balance
+            let bankroll_balance = bankroll_balance.unwrap();
+
+            // Check that the players bet number is between 0 and 6
+            if bet_number > Uint128::new(6) {
+                return Err(ContractError::InvalidBetNumber {});
+            }
+
+            // Check that only one denom was sent
+            let coin = one_coin(&info);
+            if coin.is_err() {
+                return Err(ContractError::ValidateBetInvalidDenom {});
+            }
+
+            let coin = coin.unwrap();
+
+            // Check that the denom is the same as the token in the bankroll ("ukuji")
+            if coin.denom != bankroll_balance.denom {
+                return Err(ContractError::ValidateBetDenomMismatch {
+                    player_sent_denom: coin.denom,
+                    house_bankroll_denom: bankroll_balance.denom,
+                });
+            }
+
+            // Check that the players bet amount is not zero
+            if coin.amount <= Uint128::new(0) || coin.amount.is_zero() {
+                return Err(ContractError::ValidateBetBetAmountIsZero {});
+            }
+
+            // Ensure that the amount of funds sent by player matches bet size
+            if coin.amount != info.funds[0].amount {
+                return Err(ContractError::ValidateBetFundsSentMismatch {
+                    player_sent_amount: coin.amount,
+                    bet_amount: info.funds[0].amount,
+                });
+            }
+
+            /* Make sure the player's bet_amount does not exceed 1% of house bankroll
+            Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
+            if info.funds[0].amount
+                > bankroll_balance
+                    .amount
+                    .checked_div(Uint128::new(100))
+                    .unwrap()
+            {
+                return Err(
+                    ContractError::ValidateBetBetAmountExceedsHouseBankrollBalance {
+                        player_bet_amount: info.funds[0].amount,
+                        house_bankroll_balance: bankroll_balance.amount,
+                    },
+                );
             }
 
             GAME.save(deps.storage, idx.into(), &game)?;

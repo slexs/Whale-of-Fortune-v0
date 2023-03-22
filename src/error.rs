@@ -32,4 +32,35 @@ pub enum ContractError {
 
     #[error("Entropy result is invalid, result: {result}")]
     InvalidEntropyResult { result: String },
+
+    #[error("Unable to fetch bankroll balance from addr: {addr}")]
+    ValidateBetUnableToGetBankrollBalance { addr: String },
+
+    #[error("Invalid bet number, bet numbers must be between 0 and 6")]
+    InvalidBetNumber {},
+
+    #[error("Invalid bet denom, only one denom is allowed per bet")]
+    ValidateBetInvalidDenom {},
+
+    #[error("Bet denom mismatch, player sent denom: {player_sent_denom}, house bankroll denom: {house_bankroll_denom}")]
+    ValidateBetDenomMismatch {
+        player_sent_denom: String,
+        house_bankroll_denom: String,
+    }, 
+
+    #[error("Bet amount is zero")]
+    ValidateBetBetAmountIsZero{}, 
+
+    #[error("Bet amount mismatch, player sent amount: {player_sent_amount}, bet amount: {bet_amount}")]
+    ValidateBetFundsSentMismatch {
+        player_sent_amount: Uint128,
+        bet_amount: Uint128,
+    },
+
+
+    #[error("Bet amount exceeds 1% of house bankroll balance, bet amount: {player_bet_amount}, house bankroll balance: {house_bankroll_balance}")]
+    ValidateBetBetAmountExceedsHouseBankrollBalance {
+        player_bet_amount: Uint128,
+        house_bankroll_balance: Uint128,
+    },
 }
