@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128, Coin};
+use cosmwasm_std::{Addr, Coin, Uint128};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
 
 #[cw_serde]
@@ -16,7 +16,7 @@ pub struct EntropyCallbackData {
 pub enum ExecuteMsg {
     Spin { bet_number: Uint128 },
     ReceiveEntropy(EntropyCallbackMsg),
-    // RedeemLoyaltyPoints {}, 
+    // RedeemLoyaltyPoints {},
 }
 
 #[cw_serde]
@@ -34,15 +34,15 @@ pub struct GameResponse {
     pub player: String,
     pub bet_number: Uint128,
     pub bet_size: Uint128,
-    pub played: bool, 
+    pub played: bool,
     pub payout: Coin,
     pub game_outcome: String,
-    pub win: bool, 
+    pub win: bool,
 }
 
 #[cw_serde]
 pub struct PlayerHistoryResponse {
-    pub player: String, 
+    pub player: String,
     pub games_played: Uint128,
     pub games_won: Uint128,
     pub games_lost: Uint128,

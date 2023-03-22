@@ -1,17 +1,21 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, Uint128};
+    from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response,
+    Uint128,
+};
 use cw2::set_contract_version;
 
+use cw_utils::one_coin;
 use entropy_beacon_cosmos::beacon::CalculateFeeQuery;
 use entropy_beacon_cosmos::EntropyRequest;
 
 use crate::error::ContractError;
 use crate::msg::{
-    EntropyCallbackData, ExecuteMsg, GameResponse, PlayerHistoryResponse, InstantiateMsg, MigrateMsg, QueryMsg,
+    EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg,
+    PlayerHistoryResponse, QueryMsg,
 };
-use crate::state::{Game, RuleSet, State, PlayerHistory, GAME, IDX, STATE, PLAYER_HISTORY};
+use crate::state::{Game, PlayerHistory, RuleSet, State, GAME, IDX, PLAYER_HISTORY, STATE};
 
 use crate::helpers::{calculate_payout, execute_validate_bet, get_outcome_from_entropy};
 
@@ -97,21 +101,21 @@ pub fn execute(
                     amount: Uint128::zero(),
                 },
                 rule_set: RuleSet {
-                        zero: Uint128::new(24),
-                        one: Uint128::new(12),
-                        two: Uint128::new(8),
-                        three: Uint128::new(4),
-                        four: Uint128::new(2),
-                        five: Uint128::new(1),
-                        six: Uint128::new(1),
-                    },
-                };
+                    zero: Uint128::new(24),
+                    one: Uint128::new(12),
+                    two: Uint128::new(8),
+                    three: Uint128::new(4),
+                    four: Uint128::new(2),
+                    five: Uint128::new(1),
+                    six: Uint128::new(1),
+                },
+            };
 
             // Check if PLAYER_HISTORY exists for this player, If it doesn't, create it
             let player_history = PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string())?;
             if player_history == None {
                 let new_player_history = PlayerHistory {
-                    player: info.sender.to_string(), 
+                    player: info.sender.to_string(),
                     games_played: Uint128::new(0),
                     games_won: Uint128::new(0),
                     games_lost: Uint128::new(0),
@@ -124,7 +128,8 @@ pub fn execute(
             }
 
             // Validate game bet
-            if !execute_validate_bet(
+            //TODO: Replace this to give better error messages for out frontend developer
+            /* if !execute_validate_bet(
                 &deps,
                 &env,
                 info.clone(),
@@ -132,6 +137,70 @@ pub fn execute(
                 Uint128::new(game.bet_number),
             ) {
                 return Err(ContractError::InvalidBet {});
+            } */
+
+            // Get the balance of the house bankroll (contract address balance)
+            let bankroll_balance = deps
+                .querier
+                .query_balance(env.contract.address.to_string(), "ukuji".to_string());
+
+            if bankroll_balance.is_err() {
+                return Err(ContractError::ValidateBetUnableToGetBankrollBalance {
+                    house_bankroll_addr: env.contract.address.to_string(),
+                });
+            }
+
+            // unwrap the bankroll balance
+            let bankroll_balance = bankroll_balance.unwrap();
+
+            // Check that the players bet number is between 0 and 6
+            if bet_number > Uint128::new(6) {
+                return Err(ContractError::InvalidBetNumber {});
+            }
+
+            // Check that only one denom was sent
+            let coin = one_coin(&info);
+            if coin.is_err() {
+                return Err(ContractError::ValidateBetInvalidDenom {});
+            }
+
+            let coin = coin.unwrap();
+
+            // Check that the denom is the same as the token in the bankroll ("ukuji")
+            if coin.denom != bankroll_balance.denom {
+                return Err(ContractError::ValidateBetDenomMismatch {
+                    player_sent_denom: coin.denom,
+                    house_bankroll_denom: bankroll_balance.denom,
+                });
+            }
+
+            // Check that the players bet amount is not zero
+            if coin.amount <= Uint128::new(0) || coin.amount.is_zero() {
+                return Err(ContractError::ValidateBetBetAmountIsZero {});
+            }
+
+            // Ensure that the amount of funds sent by player matches bet size
+            if coin.amount != info.funds[0].amount {
+                return Err(ContractError::ValidateBetFundsSentMismatch {
+                    funds_sent: coin.amount,
+                    bet_size: info.funds[0].amount,
+                });
+            }
+
+            /* Make sure the player's bet_amount does not exceed 1% of house bankroll
+            Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
+            if info.funds[0].amount
+                > bankroll_balance
+                    .amount
+                    .checked_div(Uint128::new(100))
+                    .unwrap()
+            {
+                return Err(
+                    ContractError::ValidateBetBetAmountExceedsHouseBankrollBalance {
+                        player_bet_amount: info.funds[0].amount,
+                        house_bankroll_balance: bankroll_balance.amount,
+                    },
+                );
             }
 
             GAME.save(deps.storage, idx.into(), &game)?;
@@ -160,21 +229,24 @@ pub fn execute(
             let mut idx = IDX.load(deps.storage)?;
             let mut game = GAME.load(deps.storage, idx.into()).unwrap();
 
-            // Check that we are able to load the player history using a match 
+            // Check that we are able to load the player history using a match
             let mut player_history = match PLAYER_HISTORY.load(deps.storage, game.player.clone()) {
                 Ok(player_history) => player_history,
-                Err(_) => return Err(ContractError::PlayerHistoryLoadError {player: game.player}),
+                Err(_) => {
+                    return Err(ContractError::PlayerHistoryLoadError {
+                        player: game.player,
+                    })
+                }
             };
-
 
             // Store the entropy beacon addr in a variable for convenience.
             let beacon_addr = state.entropy_beacon_addr;
 
             // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
             if info.sender != beacon_addr {
-                return Err(ContractError::CallBackCallerError { 
-                    caller: info.sender.to_string(), 
-                    expected: beacon_addr.to_string() 
+                return Err(ContractError::CallBackCallerError {
+                    caller: info.sender.to_string(),
+                    expected: beacon_addr.to_string(),
                 });
             }
 
@@ -194,10 +266,12 @@ pub fn execute(
             let _callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
 
             let result = Some(get_outcome_from_entropy(&entropy, &game.rule_set));
-            
-            // Check if result is None, throw error if so 
+
+            // Check if result is None, throw error if so
             if result.is_none() {
-                return Err(ContractError::InvalidEntropyResult { result: format!("{:?}", result) });
+                return Err(ContractError::InvalidEntropyResult {
+                    result: format!("{:?}", result),
+                });
             }
 
             // Unwrap the result
@@ -205,28 +279,25 @@ pub fn execute(
 
             // Check if result is empty, throw error if so
             if outcome.is_empty() {
-                return Err(ContractError::InvalidEntropyResult { result: format!("{:?}", outcome) });
+                return Err(ContractError::InvalidEntropyResult {
+                    result: format!("{:?}", outcome),
+                });
             }
 
             // Set the outcome in the game state
             game.outcome = outcome[0].to_string();
-            GAME.save( deps.storage, idx.into(), &game)?;
-
+            GAME.save(deps.storage, idx.into(), &game)?;
 
             // Check if player has won
             if game.is_winner(game.bet_number.into(), outcome.clone()) {
-                
                 // Set game result flag
                 game.win = true;
                 game.played = true;
                 game.outcome = outcome[0].to_string();
 
                 // Calculate the player's payout
-                let calculated_payout = calculate_payout(
-                    game.bet_size.into(),
-                    outcome[0],
-                    game.rule_set.clone(),
-                );
+                let calculated_payout =
+                    calculate_payout(game.bet_size.into(), outcome[0], game.rule_set.clone());
 
                 // Create payout coin
                 let payout_coin = Coin {
@@ -235,18 +306,18 @@ pub fn execute(
                 };
 
                 // Set payout in game state
-                game.payout = payout_coin.clone(); 
+                game.payout = payout_coin.clone();
 
-                // Create payout message, send payout to player 
+                // Create payout message, send payout to player
                 let _payout_msg = BankMsg::Send {
                     to_address: game.player.to_string(),
                     amount: vec![payout_coin],
                 };
 
-                // Save the game state 
+                // Save the game state
                 GAME.save(deps.storage, idx.into(), &game)?;
 
-                // Add to player's history 
+                // Add to player's history
                 player_history.games_played += Uint128::new(1);
                 player_history.games_won += Uint128::new(1);
                 player_history.total_winnings += calculated_payout;
@@ -264,16 +335,15 @@ pub fn execute(
                     .add_attribute("game_outcome", game.outcome)
                     .add_attribute("game_payout", calculated_payout.to_string()));
             } else {
-
-                // Set game result flag 
+                // Set game result flag
                 game.win = false;
                 game.played = true;
                 game.outcome = outcome[0].to_string();
 
-                // Save the game state 
+                // Save the game state
                 GAME.save(deps.storage, idx.into(), &game)?;
 
-                // Add to player's history 
+                // Add to player's history
                 player_history.games_played += Uint128::new(1);
                 player_history.games_lost += Uint128::new(1);
                 player_history.total_losses += Uint128::new(game.bet_size);
@@ -291,55 +361,53 @@ pub fn execute(
                     .add_attribute("game_outcome", game.outcome)
                     .add_attribute("game_payout", Uint128::new(0).to_string()));
             }
-        }
-    
-        // ExecuteMsg::RedeemLoyaltyPoints {  } => {
-        //     // Load the player history state
-        //     let mut player_history =  match PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string()) {
-        //         Ok(Some(player_history)) => player_history,
-        //         Ok(None) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
-        //         Err(_) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
-        //     }; 
+        } // ExecuteMsg::RedeemLoyaltyPoints {  } => {
+          //     // Load the player history state
+          //     let mut player_history =  match PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string()) {
+          //         Ok(Some(player_history)) => player_history,
+          //         Ok(None) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
+          //         Err(_) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
+          //     };
 
-        //     // Create payout coin
-        //     let payout_coin = Coin {
-        //         denom: "ukuji".to_string(),
-        //         amount: player_history.loyalty_points,
-        //     };
+          //     // Create payout coin
+          //     let payout_coin = Coin {
+          //         denom: "ukuji".to_string(),
+          //         amount: player_history.loyalty_points,
+          //     };
 
-        //     // Create payout message, send payout to player 
-        //     let _payout_msg = BankMsg::Send {
-        //         to_address: info.sender.to_string(),
-        //         amount: vec![payout_coin],
-        //     };
+          //     // Create payout message, send payout to player
+          //     let _payout_msg = BankMsg::Send {
+          //         to_address: info.sender.to_string(),
+          //         amount: vec![payout_coin],
+          //     };
 
-        //     // Set player history state
-        //     player_history.loyalty_points = Uint128::new(0);
+          //     // Set player history state
+          //     player_history.loyalty_points = Uint128::new(0);
 
-        //     // Save the player history state
-        //     PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
+          //     // Save the player history state
+          //     PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
 
-        //     return Ok(Response::new()
-        //         .add_attribute("loyalty_points_redeemed", player_history.loyalty_points.to_string())
-        //         .add_attribute("payout_amount", player_history.loyalty_points.to_string()));
-        // }
+          //     return Ok(Response::new()
+          //         .add_attribute("loyalty_points_redeemed", player_history.loyalty_points.to_string())
+          //         .add_attribute("payout_amount", player_history.loyalty_points.to_string()));
+          // }
     }
 }
 
-// Entry point for query messages to the contract 
+// Entry point for query messages to the contract
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
-    // Match the incomming query message aginst the supported query types 
+    // Match the incomming query message aginst the supported query types
     match msg {
-        // If msg is a request for game information at a specific index 
+        // If msg is a request for game information at a specific index
         QueryMsg::Game { idx } => {
             // Load the game state with the provided index
             // If game idx is not found, handle error gracefully and return a custom error message
-            let game = GAME.load(deps.storage, idx.into())
+            let game = GAME
+                .load(deps.storage, idx.into())
                 .map_err(|_| ContractError::GameNotFound(idx))?; // Handle the error gracefully
 
-
-            // Serialize the game response into a binary format 
+            // Serialize the game response into a binary format
             // if error occurs during serialization, handle error gracefully and return a custom error
             to_binary(&GameResponse {
                 idx: game.game_idx.into(),
@@ -350,27 +418,30 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 game_outcome: game.outcome,
                 win: game.win,
                 payout: game.payout,
-            }).map_err(|e| 
-                ContractError::QueryError(format!("Serialization error: {}", e)))
+            })
+            .map_err(|e| ContractError::QueryError(format!("Serialization error: {}", e)))
         }
         QueryMsg::PlayerHistory { addr } => {
             // Load the player history state with the provided address
             // If player history is not found, handle error gracefully and return a custom error message
-            let player_history = PLAYER_HISTORY.load(deps.storage, addr.to_string())
-                .map_err(|_| ContractError::PlayerHistoryLoadError{player: addr.clone()})?; // Handle the error gracefully
+            let player_history = PLAYER_HISTORY
+                .load(deps.storage, addr.to_string())
+                .map_err(|_| ContractError::PlayerHistoryLoadError {
+                    player: addr.clone(),
+                })?; // Handle the error gracefully
 
-            // Serialize the player history response into a binary format 
+            // Serialize the player history response into a binary format
             // if error occurs during serialization, handle error gracefully and return a custom error
             to_binary(&PlayerHistoryResponse {
-                player: addr, 
+                player: addr,
                 games_played: player_history.games_played.into(),
                 games_won: player_history.games_won.into(),
                 games_lost: player_history.games_lost.into(),
                 total_winnings: player_history.total_winnings.into(),
                 total_losses: player_history.total_losses.into(),
                 loyalty_points: player_history.loyalty_points.into(),
-            }).map_err(|e| 
-                ContractError::QueryError(format!("Serialization error: {}", e)))
+            })
+            .map_err(|e| ContractError::QueryError(format!("Serialization error: {}", e)))
         }
     }
 }

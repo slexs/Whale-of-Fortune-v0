@@ -1,7 +1,7 @@
 use cosmwasm_schema::cw_serde;
-use cw_storage_plus::Map;
 use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::Item;
+use cw_storage_plus::Map;
 
 // State struct represents the state of the contract
 #[cw_serde]
@@ -22,28 +22,27 @@ pub struct Game {
     pub outcome: String,
     pub played: bool,
     pub win: bool,
-    pub payout: Coin, 
+    pub payout: Coin,
     pub rule_set: RuleSet,
 }
 
 // Implement the is_winner method for the Game struct
 impl Game {
     pub fn is_winner(&self, player_bet: Uint128, outcome: Vec<u8>) -> bool {
-
-        // Check that outcome is not empty 
+        // Check that outcome is not empty
         if outcome.is_empty() {
-            return false; 
+            return false;
         }
 
         // Get the first byte of the outcome as a u128 value
         let outcome_value = u128::from(outcome[0]);
 
-        // Compare the player_bet Uint128 to the outcome_value 
+        // Compare the player_bet Uint128 to the outcome_value
         player_bet.u128() == outcome_value
     }
 }
 
-// A struct to represent the ruleset used in the game state 
+// A struct to represent the ruleset used in the game state
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
 pub struct RuleSet {
@@ -60,7 +59,7 @@ pub struct RuleSet {
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
 pub struct PlayerHistory {
-    pub player: String, 
+    pub player: String,
     pub games_played: Uint128,
     pub games_won: Uint128,
     pub games_lost: Uint128,
