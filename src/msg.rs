@@ -16,7 +16,7 @@ pub struct EntropyCallbackData {
 pub enum ExecuteMsg {
     Spin { bet_number: Uint128 },
     ReceiveEntropy(EntropyCallbackMsg),
-    RedeemLoyaltyPoints {}, 
+    // RedeemLoyaltyPoints {}, 
 }
 
 #[cw_serde]
@@ -24,6 +24,8 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(GameResponse)]
     Game { idx: Uint128 },
+    #[returns(PlayerHistoryResponse)]
+    PlayerHistory { addr: String },
 }
 
 #[cw_serde]
@@ -36,6 +38,17 @@ pub struct GameResponse {
     pub payout: Coin,
     pub game_outcome: String,
     pub win: bool, 
+}
+
+#[cw_serde]
+pub struct PlayerHistoryResponse {
+    pub player: String, 
+    pub games_played: Uint128,
+    pub games_won: Uint128,
+    pub games_lost: Uint128,
+    pub total_winnings: Uint128,
+    pub total_losses: Uint128,
+    pub loyalty_points: Uint128,
 }
 
 #[cw_serde]

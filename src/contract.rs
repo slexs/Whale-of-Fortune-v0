@@ -9,7 +9,7 @@ use entropy_beacon_cosmos::EntropyRequest;
 
 use crate::error::ContractError;
 use crate::msg::{
-    EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg,
+    EntropyCallbackData, ExecuteMsg, GameResponse, PlayerHistoryResponse, InstantiateMsg, MigrateMsg, QueryMsg,
 };
 use crate::state::{Game, RuleSet, State, PlayerHistory, GAME, IDX, STATE, PLAYER_HISTORY};
 
@@ -293,36 +293,36 @@ pub fn execute(
             }
         }
     
-        ExecuteMsg::RedeemLoyaltyPoints {  } => {
-            // Load the player history state
-            let mut player_history =  match PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string()) {
-                Ok(Some(player_history)) => player_history,
-                Ok(None) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
-                Err(_) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
-            }; 
+        // ExecuteMsg::RedeemLoyaltyPoints {  } => {
+        //     // Load the player history state
+        //     let mut player_history =  match PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string()) {
+        //         Ok(Some(player_history)) => player_history,
+        //         Ok(None) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
+        //         Err(_) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
+        //     }; 
 
-            // Create payout coin
-            let payout_coin = Coin {
-                denom: "ukuji".to_string(),
-                amount: player_history.loyalty_points,
-            };
+        //     // Create payout coin
+        //     let payout_coin = Coin {
+        //         denom: "ukuji".to_string(),
+        //         amount: player_history.loyalty_points,
+        //     };
 
-            // Create payout message, send payout to player 
-            let _payout_msg = BankMsg::Send {
-                to_address: info.sender.to_string(),
-                amount: vec![payout_coin],
-            };
+        //     // Create payout message, send payout to player 
+        //     let _payout_msg = BankMsg::Send {
+        //         to_address: info.sender.to_string(),
+        //         amount: vec![payout_coin],
+        //     };
 
-            // Set player history state
-            player_history.loyalty_points = Uint128::new(0);
+        //     // Set player history state
+        //     player_history.loyalty_points = Uint128::new(0);
 
-            // Save the player history state
-            PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
+        //     // Save the player history state
+        //     PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
 
-            return Ok(Response::new()
-                .add_attribute("loyalty_points_redeemed", player_history.loyalty_points.to_string())
-                .add_attribute("payout_amount", player_history.loyalty_points.to_string()));
-        }
+        //     return Ok(Response::new()
+        //         .add_attribute("loyalty_points_redeemed", player_history.loyalty_points.to_string())
+        //         .add_attribute("payout_amount", player_history.loyalty_points.to_string()));
+        // }
     }
 }
 
@@ -350,6 +350,25 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 game_outcome: game.outcome,
                 win: game.win,
                 payout: game.payout,
+            }).map_err(|e| 
+                ContractError::QueryError(format!("Serialization error: {}", e)))
+        }
+        QueryMsg::PlayerHistory { addr } => {
+            // Load the player history state with the provided address
+            // If player history is not found, handle error gracefully and return a custom error message
+            let player_history = PLAYER_HISTORY.load(deps.storage, addr.to_string())
+                .map_err(|_| ContractError::PlayerHistoryLoadError{player: addr.clone()})?; // Handle the error gracefully
+
+            // Serialize the player history response into a binary format 
+            // if error occurs during serialization, handle error gracefully and return a custom error
+            to_binary(&PlayerHistoryResponse {
+                player: addr, 
+                games_played: player_history.games_played.into(),
+                games_won: player_history.games_won.into(),
+                games_lost: player_history.games_lost.into(),
+                total_winnings: player_history.total_winnings.into(),
+                total_losses: player_history.total_losses.into(),
+                loyalty_points: player_history.loyalty_points.into(),
             }).map_err(|e| 
                 ContractError::QueryError(format!("Serialization error: {}", e)))
         }
