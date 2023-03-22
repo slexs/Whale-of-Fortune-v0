@@ -128,7 +128,7 @@ pub fn execute(
             }
 
             // Validate game bet
-            //TODO: Replace this to give better error messages for out frontend developer
+            //TODO: Replace this to give better error messages for our frontend developer
             /* if !execute_validate_bet(
                 &deps,
                 &env,
