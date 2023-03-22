@@ -1,10 +1,10 @@
-/* #[allow(unused_imports)]
+#[allow(unused_imports)]
 pub mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance};
-    use cosmwasm_std::{Uint128, Coin};
+    use cosmwasm_std::{Uint128, Coin, DepsMut, Env, MessageInfo};
     use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet};
-    use crate::state::RuleSet;
-
+    use crate::msg::ExecuteMsg;
+    use crate::state::{RuleSet, PLAYER_HISTORY, PlayerHistory};
 
     #[test]
     fn test_calculate_payout() {
@@ -130,5 +130,40 @@ pub mod tests {
 
     }
 
+    #[test]
+    fn test_create_and_update_player_history() {
+        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]); 
+        let env = mock_env();
+        let info = mock_info("addr0000", &[Coin { denom: "ukujis".to_string(), amount: Uint128::new(10) }]);
+
+        let player_history = PLAYER_HISTORY.may_load(&deps.storage, info.sender.to_string()).unwrap();
+            if player_history.is_none() {
+                let new_player_history = PlayerHistory {
+                    player: info.sender.to_string(), 
+                    games_played: Uint128::new(0),
+                    games_won: Uint128::new(0),
+                    games_lost: Uint128::new(0),
+                    total_winnings: Uint128::new(0),
+                    total_losses: Uint128::new(0),
+                    loyalty_points: Uint128::new(0),
+                };
+
+                PLAYER_HISTORY.save(&mut deps.storage, info.sender.to_string(), &new_player_history).unwrap();
+            }
+
+        // load player history to check the contents 
+        let player_history = PLAYER_HISTORY.load(&deps.storage, info.sender.to_string()).unwrap();
+
+        assert_eq!(player_history.player, info.sender.to_string());
+        assert_eq!(player_history.games_played, Uint128::new(0));
+        assert_eq!(player_history.games_won, Uint128::new(0));
+        assert_eq!(player_history.games_lost, Uint128::new(0));
+        assert_eq!(player_history.total_winnings, Uint128::new(0));
+        assert_eq!(player_history.total_losses, Uint128::new(0));
+        assert_eq!(player_history.loyalty_points, Uint128::new(0));
+        
+
+    }
+
     
-} */
+}

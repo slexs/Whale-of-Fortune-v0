@@ -11,7 +11,7 @@ use crate::error::ContractError;
 use crate::msg::{
     EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg,
 };
-use crate::state::{Game, RuleSet, State, GAME, IDX, STATE};
+use crate::state::{Game, RuleSet, State, PlayerHistory, GAME, IDX, STATE, PLAYER_HISTORY};
 
 use crate::helpers::{calculate_payout, execute_validate_bet, get_outcome_from_entropy};
 
@@ -107,6 +107,22 @@ pub fn execute(
                     },
                 };
 
+            // Check if PLAYER_HISTORY exists for this player, If it doesn't, create it
+            let player_history = PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string())?;
+            if player_history == None {
+                let new_player_history = PlayerHistory {
+                    player: info.sender.to_string(), 
+                    games_played: Uint128::new(0),
+                    games_won: Uint128::new(0),
+                    games_lost: Uint128::new(0),
+                    total_winnings: Uint128::new(0),
+                    total_losses: Uint128::new(0),
+                    loyalty_points: Uint128::new(0),
+                };
+
+                PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &new_player_history)?;
+            }
+
             // Validate game bet
             if !execute_validate_bet(
                 &deps,
@@ -144,6 +160,14 @@ pub fn execute(
             let mut idx = IDX.load(deps.storage)?;
             let mut game = GAME.load(deps.storage, idx.into()).unwrap();
 
+            // Check that we are able to load the player history using a match 
+            let mut player_history = match PLAYER_HISTORY.load(deps.storage, game.player.clone()) {
+                Ok(player_history) => player_history,
+                Err(_) => return Err(ContractError::PlayerHistoryLoadError {player: game.player}),
+            };
+
+
+            // Store the entropy beacon addr in a variable for convenience.
             let beacon_addr = state.entropy_beacon_addr;
 
             // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
@@ -221,7 +245,16 @@ pub fn execute(
 
                 // Save the game state 
                 GAME.save(deps.storage, idx.into(), &game)?;
-                
+
+                // Add to player's history 
+                player_history.games_played += Uint128::new(1);
+                player_history.games_won += Uint128::new(1);
+                player_history.total_winnings += calculated_payout;
+                player_history.loyalty_points += Uint128::new(1);
+
+                // Save the player history state
+                PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
+
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
@@ -239,7 +272,16 @@ pub fn execute(
 
                 // Save the game state 
                 GAME.save(deps.storage, idx.into(), &game)?;
-                
+
+                // Add to player's history 
+                player_history.games_played += Uint128::new(1);
+                player_history.games_lost += Uint128::new(1);
+                player_history.total_losses += Uint128::new(game.bet_size);
+                player_history.loyalty_points += Uint128::new(1);
+
+                // Save the player history state
+                PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
+
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
@@ -251,6 +293,36 @@ pub fn execute(
             }
         }
     
+        ExecuteMsg::RedeemLoyaltyPoints {  } => {
+            // Load the player history state
+            let mut player_history =  match PLAYER_HISTORY.may_load(deps.storage, info.sender.to_string()) {
+                Ok(Some(player_history)) => player_history,
+                Ok(None) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
+                Err(_) => return Err(ContractError::NoPlayerHistory {player: info.sender.to_string()}),
+            }; 
+
+            // Create payout coin
+            let payout_coin = Coin {
+                denom: "ukuji".to_string(),
+                amount: player_history.loyalty_points,
+            };
+
+            // Create payout message, send payout to player 
+            let _payout_msg = BankMsg::Send {
+                to_address: info.sender.to_string(),
+                amount: vec![payout_coin],
+            };
+
+            // Set player history state
+            player_history.loyalty_points = Uint128::new(0);
+
+            // Save the player history state
+            PLAYER_HISTORY.save(deps.storage, info.sender.to_string(), &player_history)?;
+
+            return Ok(Response::new()
+                .add_attribute("loyalty_points_redeemed", player_history.loyalty_points.to_string())
+                .add_attribute("payout_amount", player_history.loyalty_points.to_string()));
+        }
     }
 }
 
@@ -265,6 +337,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
             // If game idx is not found, handle error gracefully and return a custom error message
             let game = GAME.load(deps.storage, idx.into())
                 .map_err(|_| ContractError::GameNotFound(idx))?; // Handle the error gracefully
+
 
             // Serialize the game response into a binary format 
             // if error occurs during serialization, handle error gracefully and return a custom error

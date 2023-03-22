@@ -1,0 +1,3 @@
+Add new PlayerHistory struct, stores each players history. 
+
+

@@ -32,4 +32,10 @@ pub enum ContractError {
 
     #[error("Entropy result is invalid, result: {result}")]
     InvalidEntropyResult { result: String },
+
+    #[error("Player {player} has no history, cannot redeem loyalty points")]
+    NoPlayerHistory {player: String}, 
+
+    #[error("Player {player} has no history")]
+    PlayerHistoryLoadError {player: String}, 
 }
