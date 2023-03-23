@@ -185,7 +185,9 @@ pub fn execute(
 
             GAME.save(deps.storage, idx.into(), &game)?;
 
-            Ok(Response::new().add_message(
+            Ok(Response::new()
+            .add_attribute("game_idx", game.game_idx.to_string())
+            .add_message(
                 EntropyRequest {
                     callback_gas_limit,
                     callback_address: env.contract.address,
