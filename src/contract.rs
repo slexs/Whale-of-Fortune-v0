@@ -300,17 +300,18 @@ pub fn execute(
                 GAME.save(deps.storage, idx.into(), &game)?;
 
                 // Update the player's history state
-                player_history.games_played = player_history.games_played.checked_add(Uint128::new(1)).unwrap();
-                player_history.games_played = player_history.wins.checked_add(Uint128::new(1)).unwrap();
-                player_history.games_played = player_history.total_coins_spent.amount.checked_add(Uint128::new(game.bet_size)).unwrap();
-                player_history.games_played = player_history.total_coins_won.amount.checked_add(calculated_payout).unwrap();
-                PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history).unwrap();
+                player_history.games_played += Uint128::new(1);
+                player_history.wins += Uint128::new(1);
+                player_history.total_coins_spent = Coin{amount: Uint128::new(game.bet_size), denom: "ukuji".to_string()};
+                player_history.total_coins_won = Coin{ amount: calculated_payout, denom: "ukuji".to_string() };
+                PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history)?;
                 
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
 
                 return Ok(Response::new()
+                    .add_message(_payout_msg)
                     .add_attribute("game_result", game.win.to_string())
                     .add_attribute("game_outcome", game.outcome)
                     .add_attribute("game_payout", calculated_payout.to_string()));
@@ -325,10 +326,10 @@ pub fn execute(
                 GAME.save(deps.storage, idx.into(), &game)?;
                 
                 // Update the player's history state
-                player_history.games_played = player_history.games_played.checked_add(Uint128::new(1)).unwrap();
-                player_history.games_played = player_history.losses.checked_add(Uint128::new(1)).unwrap();
-                player_history.games_played = player_history.total_coins_spent.amount.checked_add(Uint128::new(game.bet_size)).unwrap();
-                PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history).unwrap();
+                player_history.games_played += Uint128::new(1);
+                player_history.losses += Uint128::new(1);
+                player_history.total_coins_spent = Coin {amount: Uint128::new(game.bet_size), denom: "ukuji".to_string()};
+                PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history)?;
                 
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
