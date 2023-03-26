@@ -90,7 +90,6 @@ pub fn execute(
                 sent_amount.into()
             );
 
-
             // Get the balance of the house bankroll (contract address balance)
             let bankroll_balance = deps
                 .querier
@@ -169,6 +168,141 @@ pub fn execute(
                     }],
                     // A custom struct and data we define for callback info.
                     // If you are using this contract as a template, you should change this to match the information your contract needs.
+                    callback_msg: EntropyCallbackData {
+                        original_sender: info.sender,
+                    },
+                }
+                .into_cosmos(beacon_addr)?,
+            ))
+        }
+
+        ExecuteMsg::FreeSpin { bet_number } => {
+
+            // Note: In production you should check the denomination of the funds to make sure it matches the native token of the chain.
+            let sent_amount: Uint128 = info.funds.iter().map(|c| c.amount).sum();
+
+            // load the game index
+            let idx = IDX.load(deps.storage)?;
+
+            // Create a new game state
+            let game = Game::new_game(
+                &info.sender.to_string(), 
+                idx.into(), 
+                bet_number.into(), 
+                sent_amount.into()
+            );
+
+            // Check if the player has any free spins left 
+            let mut player_history = match PLAYER_HISTORY.may_load(deps.storage, info.sender.clone().to_string()) {
+                Ok(Some(player_history)) => player_history,
+                Ok(None) => PlayerHistory::new(game.player.clone()),
+                Err(_) => return Err(ContractError::UnableToLoadPlayerHistory {player_addr: info.sender.to_string()}),
+            };
+
+            let state = STATE.load(deps.storage)?;
+            let beacon_addr = state.entropy_beacon_addr;
+
+
+            // How much gas our callback will use. This is an educated guess, so we usually want to overestimate.
+            let callback_gas_limit = 100_000u64;
+
+            // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
+            let beacon_fee =  0u64; // CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
+
+            // Check if the user sent enough funds to cover the fee.
+            if sent_amount < Uint128::from(beacon_fee) {
+                return Err(ContractError::InsufficientFunds {});
+            }
+
+            let idx = IDX.load(deps.storage)?;
+
+            // Create a new game state
+            let game = Game::new_game(
+                &info.sender.to_string(), 
+                idx.into(), 
+                bet_number.into(), 
+                1u128, // Free spins will be $1USK for each spin 
+            );
+
+
+            // Get the balance of the house bankroll (contract address balance)
+            let bankroll_balance = deps
+                .querier
+                .query_balance(env.contract.address.to_string(), "ukuji".to_string());
+
+            if bankroll_balance.is_err() {
+                return Err(ContractError::ValidateBetUnableToGetBankrollBalance {
+                    addr: env.contract.address.to_string(),
+                });
+            }
+
+            // unwrap the bankroll balance
+            let bankroll_balance = bankroll_balance.unwrap();
+
+            // Check that the players bet number is between 0 and 6
+            if bet_number > Uint128::new(6) {
+                return Err(ContractError::InvalidBetNumber {});
+            }
+
+            // // Check that only one denom was sent
+            // let coin = match one_coin(&info)
+            // {
+            //     Ok(coin) => coin,
+            //     Err(_) => return Err(ContractError::ValidateBetInvalidDenom {}),
+            // }; 
+
+            // Check that the denom is the same as the token in the bankroll ("ukuji")
+            // if info.funds[0].denom.clone() != bankroll_balance.denom {
+            //     return Err(ContractError::ValidateBetDenomMismatch {
+            //         player_sent_denom: info.funds[0].denom.to_string(),
+            //         house_bankroll_denom: bankroll_balance.denom,
+            //     });
+            // }
+
+            // PLAYERS BET AMOUNT CAN BE 0 FOR FREE SPINS
+            /* if coin.amount <= Uint128::new(0) || coin.amount.is_zero() {
+                return Err(ContractError::ValidateBetBetAmountIsZero {});
+            } */
+
+            // Ensure that the amount of funds sent by player matches bet size
+            // if coin.amount != info.funds[0].amount {
+            //     return Err(ContractError::ValidateBetFundsSentMismatch {
+            //         player_sent_amount: coin.amount,
+            //         bet_amount: info.funds[0].amount,
+            //     });
+            // }
+
+            /* Make sure the player's bet_amount does not exceed 1% of house bankroll
+            Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
+            if info.funds[0].amount
+                > bankroll_balance
+                    .amount
+                    .checked_div(Uint128::new(100))
+                    .unwrap()
+            {
+                return Err(
+                    ContractError::ValidateBetBetAmountExceedsHouseBankrollBalance {
+                        player_bet_amount: info.funds[0].amount,
+                        house_bankroll_balance: bankroll_balance.amount,
+                    },
+                );
+            }
+            // Deduct one credit from player_history.free_spins
+            player_history.free_spins -= Uint128::new(1);
+            PLAYER_HISTORY.save(deps.storage, info.sender.clone().to_string(), &player_history)?;
+            // Save the game state
+            GAME.save(deps.storage, idx.into(), &game)?;
+
+            Ok(Response::new()
+            .add_attribute("game_idx", game.game_idx.to_string())
+            .add_message(
+                EntropyRequest {
+                    callback_gas_limit,
+                    callback_address: env.contract.address,
+                    funds: vec![Coin {
+                        denom: "ukuji".to_string(), // Change this to match your chain's native token.
+                        amount: Uint128::from(beacon_fee),
+                    }],
                     callback_msg: EntropyCallbackData {
                         original_sender: info.sender,
                     },
@@ -329,6 +463,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 win_loss_ratio: win_loss_ratio, 
                 total_coins_spent: player_history.total_coins_spent,
                 total_coins_won: player_history.total_coins_won,
+                free_spins: player_history.free_spins,
             }).map_err(|e| 
                 ContractError::QueryError(format!("Serialization error: {}", e)))
         }

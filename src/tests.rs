@@ -201,6 +201,92 @@
 //     }
 
 //     #[test]
+//     fn test_free_spin() {
+//         // Define mock dependencies and environment
+//     let mut deps = mock_dependencies_with_balance(&[
+//         Coin {
+//             denom: "ukuji".to_string(),
+//             amount: Uint128::new(1000),
+//         },
+//     ]);
+//     let env = mock_env();
+//     let info = mock_info("player", &[Coin {
+//         denom: "ukuji".to_string(),
+//         amount: Uint128::new(0), // Zero deposit
+//     }]);
+
+//     let idx = Uint128::zero();
+//     IDX.save(&mut deps.storage, &idx).unwrap();
+
+//     let state = State {
+//         entropy_beacon_addr: Addr::unchecked("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3"),
+//         house_bankroll: Coin {
+//             denom: "ukuji".to_string(),
+//             amount: Uint128::new(1000),
+//         },
+//     };
+
+//     STATE.save(&mut deps.storage, &state).unwrap();
+
+//     let player_history = PlayerHistory {
+//         player_address: info.sender.clone().into_string(),
+//         games_played: Uint128::new(0),
+//         wins: Uint128::new(0),
+//         losses: Uint128::new(0),
+//         win_loss_ratio: Uint128::new(0),
+//         total_coins_spent: Coin{ denom: "ukuji".to_string(), amount: Uint128::new(0) },
+//         total_coins_won: Coin{ denom: "ukuji".to_string(), amount: Uint128::new(0) },
+//         free_spins: Uint128::new(10), // 10 free spin credits
+//     };
+//     // Store player history with free spin credits
+//     PLAYER_HISTORY.save(deps.as_mut().storage, info.sender.clone().to_string(), &player_history).unwrap();
+
+//     // Call the FreeSpin function with a bet number
+//     let res = execute(
+//         deps.as_mut(),
+//         env.clone(),
+//         info.clone(),
+//         ExecuteMsg::FreeSpin {
+//             bet_number: Uint128::new(0),
+//         },
+//     )
+//     .unwrap();
+
+//     // Check that the player's free spin credits were decreased by 1
+//     let updated_player_history = PLAYER_HISTORY.load(deps.as_ref().storage, info.sender.to_string()).unwrap();
+//     assert_eq!(updated_player_history.free_spins, Uint128::new(9));
+
+//     // Check that the game state was saved
+//     let game: Game = from_binary(&res.data.unwrap()).unwrap();
+//     let loaded_game = GAME.load(deps.as_ref().storage, game.game_idx.into()).unwrap();
+//     assert_eq!(loaded_game, game);.checked_sub(Uint128::new(1)).unwrap()
+
+//     // Check response attributes
+//     assert_eq!(res.attributes.len(), 1);
+//     assert_eq!(
+//         res.attributes[0],
+//         ("game_idx", loaded_game.game_idx.to_string())
+//     );
+
+//     // Check response messages
+//     assert_eq!(res.messages.len(), 1);
+//     let expected_msg = EntropyRequest {
+//         callback_gas_limit: 100_000u64,
+//         callback_address: env.contract.address,
+//         funds: vec![Coin {
+//             denom: "ukuji".to_string(),
+//             amount: Uint128::new(0), // No fee charged for free spin
+//         }],
+//         callback_msg: EntropyCallbackData {
+//             original_sender: info.sender.clone(),
+//         },
+//     };
+//     // assert_eq!(res.messages[0], expected_msg.into_cosmos(MockAddr::new()).unwrap());
+//     }
+    
+
+
+//     #[test]
 //     fn test_recieve_entropy() {
 //         // Define mock dependencies and environment
 //         let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
@@ -313,6 +399,7 @@
 //                             denom: "ukuji".to_string(),
 //                             amount: Uint128::zero(),
 //                         },
+//                         free_spins: Uint128::zero(),
 //                     }
 //                     }
 //                 };

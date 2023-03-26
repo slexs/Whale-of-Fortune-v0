@@ -77,6 +77,7 @@ pub struct PlayerHistory {
     pub win_loss_ratio: Uint128,
     pub total_coins_spent: Coin, 
     pub total_coins_won: Coin,
+    pub free_spins: Uint128,
 }
 
 #[cw_serde]
@@ -84,8 +85,6 @@ pub struct PlayerHistory {
 pub struct LatestGameIndexResponse {
     pub idx: Uint128,
 }
-
-
 
 impl PlayerHistory {
     pub fn new(player_address: String) -> Self {
@@ -103,6 +102,7 @@ impl PlayerHistory {
                 amount: Uint128::zero(),
                 denom: "ukuji".to_string(),
             },
+            free_spins: Uint128::new(5),
         }
     }
 }
