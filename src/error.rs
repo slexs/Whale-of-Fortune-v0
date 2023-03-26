@@ -39,6 +39,9 @@ pub enum ContractError {
     #[error("Invalid bet number, bet numbers must be between 0 and 6")]
     InvalidBetNumber {},
 
+    #[error("Error in loading player_history for {player_addr}")]
+    UnableToLoadPlayerHistory{ player_addr: String },
+
     #[error("Invalid bet denom, only one denom is allowed per bet")]
     ValidateBetInvalidDenom {},
 

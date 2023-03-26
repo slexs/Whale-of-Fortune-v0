@@ -1,6 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Uint128, Coin};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
+use crate::state::{PlayerHistory};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -23,6 +24,9 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     #[returns(GameResponse)]
     Game { idx: Uint128 },
+
+    #[returns(PlayerHistory)]
+    PlayerHistory { player_addr: Addr },
 }
 
 #[cw_serde]
@@ -36,6 +40,8 @@ pub struct GameResponse {
     pub game_outcome: String,
     pub win: bool, 
 }
+
+
 
 #[cw_serde]
 pub struct MigrateMsg {}

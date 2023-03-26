@@ -1,7 +1,7 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, Uint128};
+    from_binary, to_binary, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, Uint128, Addr};
 use cw2::set_contract_version;
 
 use cw_utils::one_coin;
@@ -12,9 +12,9 @@ use crate::error::ContractError;
 use crate::msg::{
     EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg,
 };
-use crate::state::{Game, RuleSet, State, GAME, IDX, STATE};
+use crate::state::{Game, RuleSet, PlayerHistory, State, GAME, IDX, STATE, PLAYER_HISTORY};
 
-use crate::helpers::{calculate_payout, execute_validate_bet, get_outcome_from_entropy};
+use crate::helpers::{calculate_payout, /* execute_validate_bet ,*/ get_outcome_from_entropy};
 
 // use cw_storage_plus::Map;
 
@@ -108,17 +108,6 @@ pub fn execute(
                     },
                 };
 
-            // Validate game bet //TODO: Replace with more verbose error messages
-           /*  if !execute_validate_bet(
-                &deps,
-                &env,
-                info.clone(),
-                Uint128::new(game.bet_size),
-                Uint128::new(game.bet_number),
-            ) {
-                return Err(ContractError::InvalidBet {});
-            } */
-
             // Get the balance of the house bankroll (contract address balance)
             let bankroll_balance = deps
                 .querier
@@ -139,12 +128,11 @@ pub fn execute(
             }
 
             // Check that only one denom was sent
-            let coin = one_coin(&info);
-            if coin.is_err() {
-                return Err(ContractError::ValidateBetInvalidDenom {});
-            }
-
-            let coin = coin.unwrap();
+            let coin = match one_coin(&info)
+            {
+                Ok(coin) => coin,
+                Err(_) => return Err(ContractError::ValidateBetInvalidDenom {}),
+            }; 
 
             // Check that the denom is the same as the token in the bankroll ("ukuji")
             if coin.denom != bankroll_balance.denom {
@@ -183,6 +171,7 @@ pub fn execute(
                 );
             }
 
+            // Save the game state
             GAME.save(deps.storage, idx.into(), &game)?;
 
             Ok(Response::new()
@@ -192,7 +181,7 @@ pub fn execute(
                     callback_gas_limit,
                     callback_address: env.contract.address,
                     funds: vec![Coin {
-                        denom: "uluna".to_string(), // Change this to match your chain's native token.
+                        denom: "ukuji".to_string(), // Change this to match your chain's native token.
                         amount: Uint128::from(beacon_fee),
                     }],
                     // A custom struct and data we define for callback info.
@@ -204,16 +193,16 @@ pub fn execute(
                 .into_cosmos(beacon_addr)?,
             ))
         }
+
         // Here we handle receiving entropy from the beacon.
         ExecuteMsg::ReceiveEntropy(data) => {
             // Load the game states from storage
             let state = STATE.load(deps.storage)?;
             let mut idx = IDX.load(deps.storage)?;
             let mut game = GAME.load(deps.storage, idx.into()).unwrap();
-
             let beacon_addr = state.entropy_beacon_addr;
 
-            // IMPORTANT: Verify that the callback was called by the beacon, and not by someone else.
+            // Verify that the callback was called by the beacon, and not by someone else.
             if info.sender != beacon_addr {
                 return Err(ContractError::CallBackCallerError { 
                     caller: info.sender.to_string(), 
@@ -221,7 +210,7 @@ pub fn execute(
                 });
             }
 
-            // IMPORTANT: Verify that the original requester for entropy is trusted (e.g.: this contract)
+            // Verify that the original requester for entropy is trusted (e.g.: this contract)
             if data.requester != env.contract.address {
                 return Err(ContractError::EntropyRequestError {
                     requester: data.requester.to_string(),
@@ -236,6 +225,7 @@ pub fn execute(
             let callback_data = data.msg;
             let _callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
 
+            // Get the calculated outcome from the entropy
             let result = Some(get_outcome_from_entropy(&entropy, &game.rule_set));
             
             // Check if result is None, throw error if so 
@@ -255,10 +245,30 @@ pub fn execute(
             game.outcome = outcome[0].to_string();
             GAME.save( deps.storage, idx.into(), &game)?;
 
+             // Check if player history exists for this player: if not, create a new instance of it and save it, if err throw message
+             let mut player_history = match PLAYER_HISTORY.may_load(deps.storage, info.sender.clone().to_string()) {
+                Ok(Some(player_history)) => player_history,
+                Ok(None) => PlayerHistory {
+                    player_address: info.sender.clone().to_string(),
+                    games_played: Uint128::zero(),
+                    wins: Uint128::zero(),
+                    losses: Uint128::zero(),
+                    win_loss_ratio: Uint128::zero(),
+                    total_coins_spent: Coin {
+                        denom: "ukuji".to_string(),
+                        amount: Uint128::zero(),
+                    },
+                    total_coins_won: Coin {
+                        denom: "ukuji".to_string(),
+                        amount: Uint128::zero(),
+                    },
+                },
+                Err(_) => return Err(ContractError::UnableToLoadPlayerHistory {player_addr: info.sender.to_string()}),
+            };
 
             // Check if player has won
             if game.is_winner(game.bet_number.into(), outcome.clone()) {
-                
+                                
                 // Set game result flag
                 game.win = true;
                 game.played = true;
@@ -266,7 +276,7 @@ pub fn execute(
 
                 // Calculate the player's payout
                 let calculated_payout = calculate_payout(
-                    game.bet_size.into(),
+                    game.bet_size.clone().into(),
                     outcome[0],
                     game.rule_set.clone(),
                 );
@@ -288,6 +298,13 @@ pub fn execute(
 
                 // Save the game state 
                 GAME.save(deps.storage, idx.into(), &game)?;
+
+                // Update the player's history state
+                player_history.games_played = player_history.games_played.checked_add(Uint128::new(1)).unwrap();
+                player_history.games_played = player_history.wins.checked_add(Uint128::new(1)).unwrap();
+                player_history.games_played = player_history.total_coins_spent.amount.checked_add(Uint128::new(game.bet_size)).unwrap();
+                player_history.games_played = player_history.total_coins_won.amount.checked_add(calculated_payout).unwrap();
+                PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history).unwrap();
                 
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
@@ -306,6 +323,12 @@ pub fn execute(
 
                 // Save the game state 
                 GAME.save(deps.storage, idx.into(), &game)?;
+                
+                // Update the player's history state
+                player_history.games_played = player_history.games_played.checked_add(Uint128::new(1)).unwrap();
+                player_history.games_played = player_history.losses.checked_add(Uint128::new(1)).unwrap();
+                player_history.games_played = player_history.total_coins_spent.amount.checked_add(Uint128::new(game.bet_size)).unwrap();
+                PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history).unwrap();
                 
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
@@ -344,6 +367,34 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 game_outcome: game.outcome,
                 win: game.win,
                 payout: game.payout,
+            }).map_err(|e| 
+                ContractError::QueryError(format!("Serialization error: {}", e)))
+        }
+
+        // If msg is a request for player history information
+        QueryMsg::PlayerHistory { player_addr } => {
+            // Load the player history state with the provided player address
+            // If player history is not found, handle error gracefully and return a custom error message
+            let player_history = PLAYER_HISTORY.load(deps.storage, player_addr.clone().to_string())
+                .map_err(|_| ContractError::UnableToLoadPlayerHistory{player_addr: player_addr.to_string()})?;
+
+            // Calculate the player's win loss ratio, if loss is zero, set win loss ratio to wins to avoid div by zero error 
+            let win_loss_ratio = if player_history.losses == Uint128::zero() {
+                player_history.wins
+            } else {
+                player_history.wins.checked_div(player_history.losses).unwrap()
+            }; 
+
+            // Serialize the player history response into a binary format 
+            // if error occurs during serialization, handle error gracefully and return a custom error
+            to_binary(&PlayerHistory {
+                player_address: player_addr.to_string(),
+                games_played: player_history.games_played,
+                wins: player_history.wins,
+                losses: player_history.losses,
+                win_loss_ratio: win_loss_ratio, 
+                total_coins_spent: player_history.total_coins_spent,
+                total_coins_won: player_history.total_coins_won,
             }).map_err(|e| 
                 ContractError::QueryError(format!("Serialization error: {}", e)))
         }
