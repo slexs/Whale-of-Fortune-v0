@@ -79,6 +79,14 @@ pub struct PlayerHistory {
     pub total_coins_won: Coin,
 }
 
+#[cw_serde]
+#[serde(rename_all = "snake_case")]
+pub struct LatestGameIndexResponse {
+    pub idx: Uint128,
+}
+
+
+
 impl PlayerHistory {
     pub fn new(player_address: String) -> Self {
         Self {

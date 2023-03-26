@@ -66,4 +66,7 @@ pub enum ContractError {
         player_bet_amount: Uint128,
         house_bankroll_balance: Uint128,
     },
+
+    #[error("UnableToLoadGameIndex")]
+    UnableToLoadGameIndex{},
 }

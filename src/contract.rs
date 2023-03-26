@@ -12,7 +12,7 @@ use crate::error::ContractError;
 use crate::msg::{
     EntropyCallbackData, ExecuteMsg, GameResponse, InstantiateMsg, MigrateMsg, QueryMsg,
 };
-use crate::state::{Game, RuleSet, PlayerHistory, State, GAME, IDX, STATE, PLAYER_HISTORY};
+use crate::state::{Game, RuleSet, PlayerHistory, State, GAME, IDX, STATE, PLAYER_HISTORY, LatestGameIndexResponse};
 
 use crate::helpers::{calculate_payout, /* execute_validate_bet ,*/ get_outcome_from_entropy, update_player_history_win, update_game_state_for_win, update_game_state_for_loss, update_player_history_loss};
 
@@ -331,6 +331,20 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 total_coins_won: player_history.total_coins_won,
             }).map_err(|e| 
                 ContractError::QueryError(format!("Serialization error: {}", e)))
+        }
+
+        QueryMsg::LatestGameIndex { } => {
+            // Load the game index state
+            // If game index is not found, handle error gracefully and return a custom error message
+            let idx = IDX.load(deps.storage)
+                .map_err(|_| ContractError::UnableToLoadGameIndex{})?;
+
+            // Serialize the game index response into a binary format 
+            // if error occurs during serialization, handle error gracefully and return a custom error
+            to_binary(&LatestGameIndexResponse {
+                idx: idx.into(),
+            }).map_err(|e| 
+                ContractError::QueryError(format!("Serialization error in LatestGameIndexResponse: {}", e)))
         }
     }
 }

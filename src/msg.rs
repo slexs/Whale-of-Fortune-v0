@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Uint128, Coin};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
-use crate::state::{PlayerHistory};
+use crate::state::{PlayerHistory, LatestGameIndexResponse};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -27,6 +27,9 @@ pub enum QueryMsg {
 
     #[returns(PlayerHistory)]
     PlayerHistory { player_addr: Addr },
+
+    #[returns(LatestGameIndexResponse)]
+    LatestGameIndex {}, 
 }
 
 #[cw_serde]
