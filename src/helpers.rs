@@ -1,8 +1,8 @@
-use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128, Coin};
 use cw_utils::one_coin;
 use sha2::{Digest, Sha256};
 
-use crate::state::{RuleSet};
+use crate::state::{RuleSet, PlayerHistory, Game};
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {
@@ -77,6 +77,37 @@ pub fn get_outcome_from_entropy(entropy: &Vec<u8>, rule_set: &RuleSet) -> Vec<u8
 
     // Return the outcome as a single-element vector
     vec![outcome]
+}
+
+pub fn update_player_history_win(player_history: &mut PlayerHistory, bet_size: Uint128, calculated_payout: Uint128) -> &mut PlayerHistory {
+    player_history.games_played += Uint128::new(1);
+    player_history.wins += Uint128::new(1);
+    player_history.total_coins_spent = Coin{amount: bet_size, denom: "ukuji".to_string()};
+    player_history.total_coins_won = Coin{ amount: calculated_payout, denom: "ukuji".to_string() };
+    player_history
+}
+
+pub fn update_player_history_loss(player_history: &mut PlayerHistory, bet_size: Uint128) -> &mut PlayerHistory {
+    player_history.games_played += Uint128::new(1);
+    player_history.losses += Uint128::new(1);
+    player_history.total_coins_spent = Coin{amount: bet_size, denom: "ukuji".to_string()};
+    player_history
+}
+
+pub fn update_game_state_for_win(mut game: Game, outcome: &Vec<u8>, payout_amount: Uint128) -> Game {
+    game.win = true;
+    game.played = true;
+    game.outcome = outcome[0].to_string();
+    game.payout.amount = payout_amount;
+    game 
+}
+
+pub fn update_game_state_for_loss(mut game: Game, outcome: &Vec<u8>) -> Game {
+    game.win = false;
+    game.played = true;
+    game.outcome = outcome[0].to_string();
+    game.payout.amount = Uint128::zero();
+    game
 }
 
 pub fn execute_validate_bet(

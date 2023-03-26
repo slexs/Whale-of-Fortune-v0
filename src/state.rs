@@ -40,6 +40,31 @@ impl Game {
         // Compare the player_bet Uint128 to the outcome_value 
         player_bet.u128() == outcome_value
     }
+
+    pub fn new_game(player: &str, idx: u128, bet_number: u128, bet_size: u128) -> Game {
+        Game {
+            player: player.to_string(),
+            game_idx: idx,
+            bet_number,
+            bet_size,
+            outcome: "Pending".to_string(),
+            played: false,
+            win: false,
+            payout: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::zero(),
+            },
+            rule_set: RuleSet {
+                zero: Uint128::new(1),
+                one: Uint128::new(3),
+                two: Uint128::new(5),
+                three: Uint128::new(10),
+                four: Uint128::new(20),
+                five: Uint128::new(45),
+                six: Uint128::new(45),
+            },
+        }
+    }    
 }
 
 #[cw_serde]
@@ -52,6 +77,26 @@ pub struct PlayerHistory {
     pub win_loss_ratio: Uint128,
     pub total_coins_spent: Coin, 
     pub total_coins_won: Coin,
+}
+
+impl PlayerHistory {
+    pub fn new(player_address: String) -> Self {
+        Self {
+            player_address,
+            games_played: Uint128::zero(),
+            wins: Uint128::zero(),
+            losses: Uint128::zero(),
+            win_loss_ratio: Uint128::zero(),
+            total_coins_spent: Coin {
+                amount: Uint128::zero(),
+                denom: "ukuji".to_string(),
+            },
+            total_coins_won: Coin {
+                amount: Uint128::zero(),
+                denom: "ukuji".to_string(),
+            },
+        }
+    }
 }
 
 impl fmt::Display for PlayerHistory {

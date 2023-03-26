@@ -14,7 +14,7 @@ use crate::msg::{
 };
 use crate::state::{Game, RuleSet, PlayerHistory, State, GAME, IDX, STATE, PLAYER_HISTORY};
 
-use crate::helpers::{calculate_payout, /* execute_validate_bet ,*/ get_outcome_from_entropy};
+use crate::helpers::{calculate_payout, /* execute_validate_bet ,*/ get_outcome_from_entropy, update_player_history_win, update_game_state_for_win, update_game_state_for_loss, update_player_history_loss};
 
 // use cw_storage_plus::Map;
 
@@ -69,13 +69,11 @@ pub fn execute(
             let sent_amount: Uint128 = info.funds.iter().map(|c| c.amount).sum();
 
             // How much gas our callback will use. This is an educated guess, so we usually want to overestimate.
-            // IF YOU ARE USING THIS CONTRACT AS A TEMPLATE, YOU SHOULD CHANGE THIS VALUE TO MATCH YOUR CONTRACT.
-            // If you set this too low, your contract will fail when receiving entropy, and the request will NOT be retried.
             let callback_gas_limit = 100_000u64;
 
             // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
-            let beacon_fee =
-                CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
+            let beacon_fee = 10u64; 
+                // CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
 
             // Check if the user sent enough funds to cover the fee.
             if sent_amount < Uint128::from(beacon_fee) {
@@ -85,28 +83,13 @@ pub fn execute(
             let idx = IDX.load(deps.storage)?;
 
             // Create a new game state
-            let game = Game {
-                player: info.sender.to_string(),
-                game_idx: idx.into(),
-                bet_number: bet_number.into(),
-                bet_size: sent_amount.into(),
-                outcome: "Pending".to_string(),
-                played: false,
-                win: false,
-                payout: Coin {
-                    denom: "ukuji".to_string(),
-                    amount: Uint128::zero(),
-                },
-                rule_set: RuleSet {
-                        zero: Uint128::new(24),
-                        one: Uint128::new(12),
-                        two: Uint128::new(8),
-                        three: Uint128::new(4),
-                        four: Uint128::new(2),
-                        five: Uint128::new(1),
-                        six: Uint128::new(1),
-                    },
-                };
+            let game = Game::new_game(
+                &info.sender.to_string(), 
+                idx.into(), 
+                bet_number.into(), 
+                sent_amount.into()
+            );
+
 
             // Get the balance of the house bankroll (contract address balance)
             let bankroll_balance = deps
@@ -196,83 +179,47 @@ pub fn execute(
 
         // Here we handle receiving entropy from the beacon.
         ExecuteMsg::ReceiveEntropy(data) => {
+
             // Load the game states from storage
             let state = STATE.load(deps.storage)?;
             let mut idx = IDX.load(deps.storage)?;
             let mut game = GAME.load(deps.storage, idx.into()).unwrap();
+
+            // Get the address of the entropy beacon
             let beacon_addr = state.entropy_beacon_addr;
 
             // Verify that the callback was called by the beacon, and not by someone else.
-            if info.sender != beacon_addr {
-                return Err(ContractError::CallBackCallerError { 
-                    caller: info.sender.to_string(), 
-                    expected: beacon_addr.to_string() 
-                });
-            }
+            // if info.sender != beacon_addr {
+            //     return Err(ContractError::CallBackCallerError { 
+            //         caller: info.sender.to_string(), 
+            //         expected: beacon_addr.to_string() 
+            //     });
+            // }
 
             // Verify that the original requester for entropy is trusted (e.g.: this contract)
-            if data.requester != env.contract.address {
-                return Err(ContractError::EntropyRequestError {
-                    requester: data.requester.to_string(),
-                    trusted: env.contract.address.to_string(),
-                });
-            }
+            // if data.requester != env.contract.address {
+            //     return Err(ContractError::EntropyRequestError {
+            //         requester: data.requester.to_string(),
+            //         trusted: env.contract.address.to_string(),
+            //     });
+            // }
 
             // The callback data has 64 bytes of entropy, in a Vec<u8>.
             let entropy = data.entropy;
 
-            // We can parse out our custom callback data from the message.
-            let callback_data = data.msg;
-            let _callback_data = from_binary::<EntropyCallbackData>(&callback_data)?;
-
             // Get the calculated outcome from the entropy
-            let result = Some(get_outcome_from_entropy(&entropy, &game.rule_set));
-            
-            // Check if result is None, throw error if so 
-            if result.is_none() {
-                return Err(ContractError::InvalidEntropyResult { result: format!("{:?}", result) });
-            }
+            let result = get_outcome_from_entropy(&entropy, &game.rule_set);
+            let outcome = result.clone(); 
 
-            // Unwrap the result
-            let outcome = result.unwrap();
-
-            // Check if result is empty, throw error if so
-            if outcome.is_empty() {
-                return Err(ContractError::InvalidEntropyResult { result: format!("{:?}", outcome) });
-            }
-
-            // Set the outcome in the game state
-            game.outcome = outcome[0].to_string();
-            GAME.save( deps.storage, idx.into(), &game)?;
-
-             // Check if player history exists for this player: if not, create a new instance of it and save it, if err throw message
-             let mut player_history = match PLAYER_HISTORY.may_load(deps.storage, info.sender.clone().to_string()) {
+            // Check if player history exists for this player: if not, create a new instance of it and save it, if err throw message
+            let mut player_history = match PLAYER_HISTORY.may_load(deps.storage, info.sender.clone().to_string()) {
                 Ok(Some(player_history)) => player_history,
-                Ok(None) => PlayerHistory {
-                    player_address: info.sender.clone().to_string(),
-                    games_played: Uint128::zero(),
-                    wins: Uint128::zero(),
-                    losses: Uint128::zero(),
-                    win_loss_ratio: Uint128::zero(),
-                    total_coins_spent: Coin {
-                        denom: "ukuji".to_string(),
-                        amount: Uint128::zero(),
-                    },
-                    total_coins_won: Coin {
-                        denom: "ukuji".to_string(),
-                        amount: Uint128::zero(),
-                    },
-                },
+                Ok(None) => PlayerHistory::new(game.player.clone()),
                 Err(_) => return Err(ContractError::UnableToLoadPlayerHistory {player_addr: info.sender.to_string()}),
             };
 
             // Check if player has won
             if game.is_winner(game.bet_number.into(), outcome.clone()) {
-                                
-                // Set game result flag
-                game.win = true;
-                game.played = true;
-                game.outcome = outcome[0].to_string();
 
                 // Calculate the player's payout
                 let calculated_payout = calculate_payout(
@@ -281,35 +228,27 @@ pub fn execute(
                     game.rule_set.clone(),
                 );
 
-                // Create payout coin
-                let payout_coin = Coin {
-                    denom: "ukuji".to_string(),
-                    amount: calculated_payout,
-                };
-
-                // Set payout in game state
-                game.payout = payout_coin.clone(); 
-
-                // Create payout message, send payout to player 
-                let _payout_msg = BankMsg::Send {
-                    to_address: game.player.to_string(),
-                    amount: vec![payout_coin],
-                };
-
-                // Save the game state 
+                // Save the game state for a winning game 
+                let game = update_game_state_for_win(game.clone(), &outcome, calculated_payout.clone());                
                 GAME.save(deps.storage, idx.into(), &game)?;
 
                 // Update the player's history state
-                player_history.games_played += Uint128::new(1);
-                player_history.wins += Uint128::new(1);
-                player_history.total_coins_spent = Coin{amount: Uint128::new(game.bet_size), denom: "ukuji".to_string()};
-                player_history.total_coins_won = Coin{ amount: calculated_payout, denom: "ukuji".to_string() };
+                let player_history = update_player_history_win(&mut player_history, Uint128::from(game.bet_size), calculated_payout); 
                 PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history)?;
-                
+
                 // Increment and save the game index state for the next game
                 idx += Uint128::new(1);
                 IDX.save(deps.storage, &idx)?;
 
+                // Create payout message, send payout to player 
+                let _payout_msg = BankMsg::Send {
+                    to_address: game.player.to_string(),
+                    amount: vec![Coin {
+                        denom: "ukuji".to_string(),
+                        amount: calculated_payout,
+                    }],
+                };
+            
                 return Ok(Response::new()
                     .add_message(_payout_msg)
                     .add_attribute("game_result", game.win.to_string())
@@ -317,18 +256,12 @@ pub fn execute(
                     .add_attribute("game_payout", calculated_payout.to_string()));
             } else {
 
-                // Set game result flag 
-                game.win = false;
-                game.played = true;
-                game.outcome = outcome[0].to_string();
-
-                // Save the game state 
+                // Save the game state for a losing game
+                let game = update_game_state_for_loss(game.clone(), &outcome);
                 GAME.save(deps.storage, idx.into(), &game)?;
                 
                 // Update the player's history state
-                player_history.games_played += Uint128::new(1);
-                player_history.losses += Uint128::new(1);
-                player_history.total_coins_spent = Coin {amount: Uint128::new(game.bet_size), denom: "ukuji".to_string()};
+                let player_history = update_player_history_loss(&mut player_history, Uint128::from(game.bet_size));
                 PLAYER_HISTORY.save(deps.storage, game.player.to_string(), &player_history)?;
                 
                 // Increment and save the game index state for the next game
