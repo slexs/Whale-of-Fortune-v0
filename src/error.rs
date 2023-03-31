@@ -1,4 +1,4 @@
-use cosmwasm_std::{Uint128};
+use cosmwasm_std::Uint128;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,9 +10,11 @@ pub enum ContractError {
     QueryError(String),
 
     #[error("Game not found at index {0}")]
-    GameNotFound(Uint128), 
+    GameNotFound(Uint128),
 
-    #[error("Invalid execute message, got {got}, expected: 'spin' with a bet number between 0 and 6")]
+    #[error(
+        "Invalid execute message, got {got}, expected: 'spin' with a bet number between 0 and 6"
+    )]
     InvalidExecuteMsg { got: String },
 
     #[error("Unauthorized")]
@@ -25,10 +27,10 @@ pub enum ContractError {
     InvalidBet {},
 
     #[error("callback not called by beacon, caller: {caller}, expected: {expected}")]
-    CallBackCallerError {caller: String, expected: String},
+    CallBackCallerError { caller: String, expected: String },
 
     #[error("Requester for entropy is not trusted, requester: {requester}, trusted: {trusted}")]
-    EntropyRequestError {requester: String, trusted: String},
+    EntropyRequestError { requester: String, trusted: String },
 
     #[error("Entropy result is invalid, result: {result}")]
     InvalidEntropyResult { result: String },
@@ -40,7 +42,7 @@ pub enum ContractError {
     InvalidBetNumber {},
 
     #[error("Error in loading player_history for {player_addr}")]
-    UnableToLoadPlayerHistory{ player_addr: String },
+    UnableToLoadPlayerHistory { player_addr: String },
 
     #[error("Invalid bet denom, only one denom is allowed per bet")]
     ValidateBetInvalidDenom {},
@@ -49,17 +51,18 @@ pub enum ContractError {
     ValidateBetDenomMismatch {
         player_sent_denom: String,
         house_bankroll_denom: String,
-    }, 
+    },
 
     #[error("Bet amount is zero")]
-    ValidateBetBetAmountIsZero{}, 
+    ValidateBetBetAmountIsZero {},
 
-    #[error("Bet amount mismatch, player sent amount: {player_sent_amount}, bet amount: {bet_amount}")]
+    #[error(
+        "Bet amount mismatch, player sent amount: {player_sent_amount}, bet amount: {bet_amount}"
+    )]
     ValidateBetFundsSentMismatch {
         player_sent_amount: Uint128,
         bet_amount: Uint128,
     },
-
 
     #[error("Bet amount exceeds 1% of house bankroll balance, bet amount: {player_bet_amount}, house bankroll balance: {house_bankroll_balance}")]
     ValidateBetBetAmountExceedsHouseBankrollBalance {
@@ -68,5 +71,8 @@ pub enum ContractError {
     },
 
     #[error("UnableToLoadGameIndex")]
-    UnableToLoadGameIndex{},
+    UnableToLoadGameIndex {},
+
+    #[error("No free spins left")]
+    NoFreeSpinsLeft {},
 }

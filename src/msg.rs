@@ -1,7 +1,8 @@
+use crate::state::{LatestGameIndexResponse, PlayerHistory, State};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128, Coin};
+use cosmwasm_std::{Addr, Coin, Uint128};
+use cw2::ContractVersion;
 use entropy_beacon_cosmos::EntropyCallbackMsg;
-use crate::state::{PlayerHistory, LatestGameIndexResponse};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -15,7 +16,7 @@ pub struct EntropyCallbackData {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    Spin { bet_number: Uint128 },
+    Spin { bet_number: Uint128 /* , bet_size: Uint128 */},
     ReceiveEntropy(EntropyCallbackMsg),
     FreeSpin { bet_number: Uint128 },
 }
@@ -30,7 +31,10 @@ pub enum QueryMsg {
     PlayerHistory { player_addr: Addr },
 
     #[returns(LatestGameIndexResponse)]
-    LatestGameIndex {}, 
+    LatestGameIndex {},
+
+    #[returns(StateResponse)]
+    GetState {},
 }
 
 #[cw_serde]
@@ -39,13 +43,19 @@ pub struct GameResponse {
     pub player: String,
     pub bet_number: Uint128,
     pub bet_size: Uint128,
-    pub played: bool, 
+    pub played: bool,
     pub payout: Coin,
     pub game_outcome: String,
-    pub win: bool, 
+    pub win: bool,
 }
 
-
+#[cw_serde]
+pub struct StateResponse {
+    pub entropy_beacon_addr: Addr,
+    // pub house_bankroll: Coin,
+    pub idx: Uint128, 
+    pub contract_version: ContractVersion, 
+}
 
 #[cw_serde]
 pub struct MigrateMsg {}
