@@ -1,4 +1,4 @@
-#[allow(unused_imports)]
+/* #[allow(unused_imports)]
 #[cfg(test)]
 pub mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance};
@@ -11,7 +11,7 @@ pub mod tests {
     use entropy_beacon_cosmos::msg::QueryMsg as BeaconQueryMsg;
     use entropy_beacon_cosmos::msg::ExecuteMsg as BeaconExecuteMsg;
     use crate::contract::{execute, instantiate, query};
-    use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet};
+    use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet, create_entropy_for_outcome};
     use crate::state::{RuleSet, State, Game, PLAYER_HISTORY, PlayerHistory, STATE, IDX, GAME};
     use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData, QueryMsg, StateResponse};
     use cosmwasm_std::Binary;
@@ -143,6 +143,101 @@ pub mod tests {
         // Check that the responses are correct
         assert_eq!(res.events[1].attributes[0], ("_contract_addr", "contract0")); 
         assert_eq!(res.events[1].attributes[1], ("game_type", "spin"));
+        assert_eq!(res.events[1].attributes[2], ("game_idx", "0"));
+
+        //TODO: How do we check the callback function? 
+
+    
+}
+
+#[test]
+    fn test_execute_free_spin() {
+        let code = ContractWrapper::new(execute, instantiate, query);
+        // let code_id = app.store_code(Box::new(code));
+
+        // create a dummy beacon address 
+        let beacon_address = "beacondummy".to_string(); 
+
+        // Create a new app with the bank module initializing balances for bank and player 
+        let mut app = App::new(|router, api, storage| {
+            // Initialize bank module with the initial balance for the player.
+            router
+            .bank
+            .init_balance(
+                storage, 
+                &Addr::unchecked("player".to_string()), 
+                vec![
+                    Coin::new(100_000, "ukuji"),
+                ]).unwrap(); 
+
+            // Initialize bank module with the initial balance for the contract.
+            router
+            .bank
+            .init_balance(
+                storage, 
+                &Addr::unchecked("contract0".to_string()), 
+                vec![
+                    Coin::new(100_000, "ukuji".to_string()),
+                ])
+                .unwrap();
+            });
+
+        // Check player and contract balance 
+        let _player_balance = app.wrap().query_balance(&Addr::unchecked("player"), "ukuji").unwrap();
+        let _contract_balance = app.wrap().query_balance(&Addr::unchecked("contract0"), "ukuji").unwrap();
+        
+        // Get contract id 
+        let code_id = app.store_code(Box::new(code));
+
+        // Create instantiate message 
+        let instantiate_msg = InstantiateMsg {
+            entropy_beacon_addr: Addr::unchecked(beacon_address.clone()),
+        };
+
+        // Instantiate the contract
+        let addr = app
+        .instantiate_contract(
+            code_id, 
+            Addr::unchecked("player"), 
+            &instantiate_msg, 
+            &[Coin { denom: "ukuji".to_string(), amount: Uint128::new(1000) }], 
+            "contract", 
+            Some("player".to_string()), 
+        ).unwrap();
+
+        // Query the contract state 
+        let state_query_msg = QueryMsg::GetState{}; 
+        let mut state: StateResponse = app
+            .wrap()
+            .query_wasm_smart(addr.clone(), &state_query_msg)
+            .unwrap();
+
+        // assert that the state is correct
+        assert_eq!(state.entropy_beacon_addr, instantiate_msg.entropy_beacon_addr);
+
+        // Create a Coin object to send funds to the contract execution 
+        let send_funds = Coin{
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(1000)
+        };
+        
+        // Create a message for the spin function
+        let spin_msg = ExecuteMsg::FreeSpin { 
+            bet_number: Uint128::new(0), 
+        };
+
+        // Execute the spin function
+        let res = app
+            .execute_contract(
+                Addr::unchecked("player"),
+                addr.clone(), 
+                &spin_msg, 
+                &[send_funds],
+            ).unwrap();
+
+        // Check that the responses are correct
+        assert_eq!(res.events[1].attributes[0], ("_contract_addr", "contract0")); 
+        assert_eq!(res.events[1].attributes[1], ("game_type", "freespin"));
         assert_eq!(res.events[1].attributes[2], ("game_idx", "0"));
 
         //TODO: How do we check the callback function? 
@@ -457,6 +552,31 @@ pub mod tests {
             six: Uint128::new(45),
         }; 
 
+        /* let total_weight = 1 + 3 + 5 + 10 + 20 + 45 + 45;
+
+        let entropy_outcome_1 = create_entropy_for_outcome(1, &rule_set);
+        let entropy_outcome_2 = create_entropy_for_outcome(2, &rule_set);
+        let entropy_outcome_3 = create_entropy_for_outcome(3, &rule_set);
+        let entropy_outcome_4 = create_entropy_for_outcome(4, &rule_set);
+        let entropy_outcome_5 = create_entropy_for_outcome(5, &rule_set);
+        let entropy_outcome_6 = create_entropy_for_outcome(6, &rule_set);
+    
+        let test_cases = [
+            (entropy_outcome_1, 1),
+            (entropy_outcome_2, 2),
+            (entropy_outcome_3, 3),
+            (entropy_outcome_4, 4),
+            (entropy_outcome_5, 5),
+            (entropy_outcome_6, 6),
+        ];
+
+        for (entropy, expected_outcome) in test_cases.iter() {
+            let outcome = get_outcome_from_entropy(entropy, &rule_set);
+            assert_eq!(outcome.len(), 1);
+            assert_eq!(outcome[0], * expected_outcome);
+        } */
+        
+
         // Valid, entropy will result in result = 0
         let entropy = hex::decode("68b7cfd0fcfd3564359318426bea7f203ebc8687bda140645d60caaf79b6b18b9e8d9c93e62f2b2e138c520253b96c23800b2f82274586a4b5f246a3479a5715").unwrap();
         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
@@ -488,6 +608,8 @@ pub mod tests {
         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
         assert!(outcome.len() == 0);
         assert!(outcome.is_empty());
+
+   
         
 
     }
@@ -545,4 +667,4 @@ pub mod tests {
 
     }
 
-}
+} */

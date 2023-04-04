@@ -1,101 +1,37 @@
 use cosmwasm_std::{Coin, DepsMut, Env, MessageInfo, Uint128, Response};
-
+// use dev::rand::Rng;
 use cw_utils::one_coin;
 use sha2::{Digest, Sha256};
-
+// use rand::prelude::*;
 use crate::{state::{Game, PlayerHistory, RuleSet, STATE, IDX, PLAYER_HISTORY}, ContractError};
 
-// pub fn handle_spin(
-//     deps: DepsMut,
-//     env: Env,
-//     info: MessageInfo,
-//     bet_number: Uint128,
-//     bet_size: Uint128,
-//     is_free_spin: bool,
-// ) -> Result<Response, ContractError> {
-//     let state = STATE.load(deps.storage)?;
-//     let beacon_addr = state.entropy_beacon_addr;
 
-//     let idx = IDX.load(deps.storage)?;
+// pub fn create_entropy_for_outcome(outcome: u8, rule_set: &RuleSet) -> Vec<u8> {
+//     let total_weight = rule_set.zero + rule_set.one + rule_set.two + rule_set.three + rule_set.four + rule_set.five + rule_set.six;
 
-//     // Create a new game state
-//     let game = Game::new_game(&info.sender.to_string(), idx.into(), bet_number.into(), bet_size.into());
+//     loop {
+//         let mut rng = rand::thread_rng();
+//         let entropy: Vec<u8> = (0..64).map(|_| rng.gen()).collect();
+//         let entropy_number_raw = u32::from_be_bytes(entropy[..4].try_into().unwrap());
+//         let entropy_number = Uint128::from(entropy_number_raw) % total_weight;
 
-//     // Get the balance of the house bankroll (contract address balance)
-//     let bankroll_balance = deps
-//         .querier
-//         .query_balance(env.contract.address.to_string(), "ukuji".to_string());
+//         let mut weight_sum = Uint128::new(0);
+//         let mut current_outcome = 0;
 
-//     // Gracefully handle any errors 
-//     let bankroll_balance = bankroll_balance.map_err(|_| ContractError::ValidateBetUnableToGetBankrollBalance {
-//         addr: env.contract.address.to_string(),
-//     })?;
+//         for weight in &[&rule_set.zero, &rule_set.one, &rule_set.two, &rule_set.three, &rule_set.four, &rule_set.five, &rule_set.six] {
+//             weight_sum += *weight;
+//             current_outcome += 1;
 
-//     // Check that the players bet number is between 0 and 6
-//     if bet_number > Uint128::new(6) {
-//         return Err(ContractError::InvalidBetNumber {});
-//     }
-
-//     // Ensure that the amount of funds sent by player matches bet size if it's not a free spin
-//     if !is_free_spin {
-//         let coin = match one_coin(&info) {
-//             Ok(coin) => coin,
-//             Err(_) => return Err(ContractError::ValidateBetInvalidDenom {}),
-//         };
-
-//     // Check that the sent amount matches the bet size
-//     if coin.amount != bet_size {
-//         return Err(ContractError::InvalidBetAmount {});
-//     }
-
-//     // Calculate the max winnings based on the bet size
-//     let max_win = calculate_max_win(bet_size);
-
-//     // Ensure the house has enough funds to cover max winnings
-//     if bankroll_balance.amount < max_win {
-//         return Err(ContractError::InsufficientBankrollFunds {});
-//     }
-
-//     // Load player history
-//     let mut player_history = PLAYER_HISTORY.load(deps.storage, info.sender.clone())?;
-
-//     // If it's not a free spin, update the player's total bet amount
-//     if !is_free_spin {
-//         player_history.total_bet_amount += bet_size;
-//     }
-
-//     // Deduct one credit from player_history.free_spins if it's a free spin
-//     if is_free_spin {
-//         if player_history.free_spins == Uint128::zero() {
-//             return Err(ContractError::NoFreeSpinsLeft {});
+//             if entropy_number < weight_sum {
+//                 break;
+//             }
 //         }
-//         player_history.free_spins -= Uint128::new(1);
+
+//         if current_outcome == outcome {
+//             return entropy;
+//         }
 //     }
-
-//     // Save the updated player history
-//     PLAYER_HISTORY.save(deps.storage, info.sender.clone(), &player_history)?;
-
-//     // Save the game state
-//     GAMES.save(deps.storage, idx, &game)?;
-
-//     // Increment the game index
-//     IDX.save(deps.storage, &(idx + 1))?;
-
-//     // Request entropy from the entropy beacon
-//     let entropy_request = WasmMsg::Execute {
-//         contract_addr: beacon_addr,
-//         msg: to_binary(&EntropyRequestMsg {
-//             callback_addr: env.contract.address.to_string(),
-//         })?,
-//         funds: vec![],
-//     };
-//     let res = Response::new()
-//         .add_attribute("action", "spin")
-//         .add_message(entropy_request);
-
-//     Ok(res)
 // }
-
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {

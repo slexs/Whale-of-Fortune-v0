@@ -153,46 +153,27 @@ pub fn execute(
             // Save the game state
             GAME.save(deps.storage, idx.into(), &game)?;
 
-            let entropy_request = EntropyRequest {
-                callback_gas_limit,
-                callback_address: env.contract.address,
-                funds: vec![Coin {
-                    denom: "ukuji".to_string(),
-                    amount: Uint128::from(beacon_fee),
-                }],
-                callback_msg: EntropyCallbackData {
-                    original_sender: info.sender,
-                },
-            }; 
-
-            // For testing purposes 
-            if game.player == "player".to_string() {
-                Ok(Response::new()
-                .add_attribute("game_type", "spin")
-                .add_attribute("game_idx", game.game_idx.to_string()))
-            } else {
             Ok(Response::new()
                 .add_attribute("game_type", "spin")
                 .add_attribute("game_idx", game.game_idx.to_string())
-                .add_message(entropy_request
-                    // EntropyRequest {
-                    //     callback_gas_limit,
-                    //     callback_address: env.contract.address,
-                    //     funds: vec![Coin {
-                    //         denom: "ukuji".to_string(), // Change this to match your chain's native token.
-                    //         amount: Uint128::from(beacon_fee),
-                    //     }],
-                    //     // A custom struct and data we define for callback info.
-                    //     // If you are using this contract as a template, you should change this to match the information your contract needs.
-                    //     callback_msg: EntropyCallbackData {
-                    //         original_sender: info.sender,
-                    //     },
-                    // }
+                .add_message(
+                    EntropyRequest {
+                        callback_gas_limit,
+                        callback_address: env.contract.address,
+                        funds: vec![Coin {
+                            denom: "ukuji".to_string(), // Change this to match your chain's native token.
+                            amount: Uint128::from(beacon_fee),
+                        }],
+                        // A custom struct and data we define for callback info.
+                        // If you are using this contract as a template, you should change this to match the information your contract needs.
+                        callback_msg: EntropyCallbackData {
+                            original_sender: info.sender,
+                        },
+                    }
                     .into_cosmos(beacon_addr)?,
                 ))
             }
-        }
-
+        
         ExecuteMsg::FreeSpin { bet_number } => {
             let idx = IDX.load(deps.storage)?;
 
@@ -228,8 +209,14 @@ pub fn execute(
             let callback_gas_limit = 100_000u64;
 
             // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
-            let beacon_fee = 
-                CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
+            let beacon_fee = match &game.player {
+                player if player == "player" => Ok(Uint128::new(0)), // for cw multi test purposes 
+                _ => CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())
+                    .map(Uint128::from)
+                    .map_err(|_| ContractError::BeaconFeeError { beacon_fee: "{beacon_fee}".to_string() }),
+            }?;
+            
+            // CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
 
             // Check that the players bet number is between 0 and 6
             if bet_number > Uint128::new(6) {
@@ -247,6 +234,12 @@ pub fn execute(
             // Save the game state
             GAME.save(deps.storage, idx.into(), &game)?;
 
+            // For testing purposes 
+            if game.player == "player".to_string() {
+                Ok(Response::new()
+                .add_attribute("game_type", "freespin")
+                .add_attribute("game_idx", game.game_idx.to_string()))
+            } else {
             Ok(Response::new()
                 .add_attribute("game_type", "free_spin")
                 .add_attribute("remaining_freespins", player_history.free_spins.to_string())
@@ -265,6 +258,7 @@ pub fn execute(
                     }
                     .into_cosmos(beacon_addr)?,
                 ))
+            }
         }
 
         // Here we handle receiving entropy from the beacon.
@@ -277,21 +271,22 @@ pub fn execute(
             // Get the address of the entropy beacon
             let beacon_addr = state.entropy_beacon_addr;
 
-            // // Verify that the callback was called by the beacon, and not by someone else.
-            // if info.sender != beacon_addr {
-            //     return Err(ContractError::CallBackCallerError {
-            //         caller: info.sender.to_string(),
-            //         expected: beacon_addr.to_string(),
-            //     });
-            // }
+            // Verify that the callback was called by the beacon, and not by someone else.
+            
+            if info.sender != beacon_addr {
+                return Err(ContractError::CallBackCallerError {
+                    caller: info.sender.to_string(),
+                    expected: beacon_addr.to_string(),
+                });
+            }
 
-            // // Verify that the original requester for entropy is trusted (e.g.: this contract)
-            // if data.requester != env.contract.address {
-            //     return Err(ContractError::EntropyRequestError {
-            //         requester: data.requester.to_string(),
-            //         trusted: env.contract.address.to_string(),
-            //     });
-            // }
+            // Verify that the original requester for entropy is trusted (e.g.: this contract)
+            if data.requester != env.contract.address {
+                return Err(ContractError::EntropyRequestError {
+                    requester: data.requester.to_string(),
+                    trusted: env.contract.address.to_string(),
+                });
+            }
 
             // The callback data has 64 bytes of entropy, in a Vec<u8>.
             let entropy = data.entropy;

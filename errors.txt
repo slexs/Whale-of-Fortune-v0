@@ -1,0 +1,107 @@
+warning: unused manifest key: alias
+warning: profile package spec `cw20-atomic-swap` in profile `release` did not match any packages
+warning: profile package spec `cw20-bonding` in profile `release` did not match any packages
+warning: profile package spec `cw20-escrow` in profile `release` did not match any packages
+warning: profile package spec `cw20-merkle-airdrop` in profile `release` did not match any packages
+warning: profile package spec `cw20-staking` in profile `release` did not match any packages
+warning: profile package spec `cw20-streams` in profile `release` did not match any packages
+   Compiling syn v1.0.109
+   Compiling serde_json v1.0.95
+   Compiling serde v1.0.159
+   Compiling thiserror v1.0.40
+   Compiling byteorder v1.4.3
+   Compiling semver v1.0.17
+   Compiling num-bigint v0.4.3
+   Compiling wasm v0.0.0
+   Compiling uint v0.9.5
+   Compiling serde-json-wasm v0.5.0
+   Compiling serde_derive_internals v0.26.0
+   Compiling derivative v2.2.0
+   Compiling cosmwasm-derive v1.2.3
+   Compiling cosmwasm-schema-derive v1.2.3
+   Compiling schemars_derive v0.8.12
+   Compiling schemars v0.8.12
+   Compiling cosmwasm-std v1.2.3
+   Compiling cosmwasm-schema v1.2.3
+   Compiling cw-storage-plus v1.0.1
+   Compiling cosmwasm-storage v1.2.3
+   Compiling entropy_beacon_cosmos v2.0.4
+   Compiling cw2 v1.0.1
+   Compiling cw-utils v1.0.1
+   Compiling cw20 v1.0.1
+   Compiling kujira v0.7.25
+   Compiling cw20-base v1.0.1
+   Compiling whale-of-fortune v0.1.0 (/code)
+warning: unused imports: `Addr`, `from_binary`
+ --> src/contract.rs:4:5
+  |
+4 |     from_binary, to_binary, Addr, BankMsg, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response,
+  |     ^^^^^^^^^^^             ^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `RuleSet`
+  --> src/contract.rs:18:51
+   |
+18 |     Game, LatestGameIndexResponse, PlayerHistory, RuleSet, State, GAME, IDX, PLAYER_HISTORY, STATE,
+   |                                                   ^^^^^^^
+
+warning: unused import: `Response`
+ --> src/helpers.rs:1:62
+  |
+1 | use cosmwasm_std::{Coin, DepsMut, Env, MessageInfo, Uint128, Response};
+  |                                                              ^^^^^^^^
+
+warning: unused import: `Sha256`
+ --> src/helpers.rs:4:20
+  |
+4 | use sha2::{Digest, Sha256};
+  |                    ^^^^^^
+
+warning: unused imports: `ContractError`, `IDX`, `PLAYER_HISTORY`, `STATE`
+ --> src/helpers.rs:6:51
+  |
+6 | use crate::{state::{Game, PlayerHistory, RuleSet, STATE, IDX, PLAYER_HISTORY}, ContractError};
+  |                                                   ^^^^^  ^^^  ^^^^^^^^^^^^^^   ^^^^^^^^^^^^^
+
+warning: unused imports: `LatestGameIndexResponse`, `PlayerHistory`, `State`
+ --> src/msg.rs:1:20
+  |
+1 | use crate::state::{LatestGameIndexResponse, PlayerHistory, State};
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^
+
+warning: unused import: `Digest`
+ --> src/helpers.rs:4:12
+  |
+4 | use sha2::{Digest, Sha256};
+  |            ^^^^^^
+
+warning: unused variable: `rule_set`
+  --> src/helpers.rs:36:59
+   |
+36 | pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
+   |                                                           ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rule_set`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: value assigned to `outcome` is never read
+  --> src/helpers.rs:98:13
+   |
+98 |     let mut outcome = 0;
+   |             ^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` on by default
+
+warning: variable does not need to be mutable
+   --> src/contract.rs:288:17
+    |
+288 |             let mut game = GAME.load(deps.storage, idx.into()).unwrap();
+    |                 ----^^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: `whale-of-fortune` (lib) generated 10 warnings
+    Finished release [optimized] target(s) in 1m 08s

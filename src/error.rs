@@ -75,4 +75,7 @@ pub enum ContractError {
 
     #[error("No free spins left")]
     NoFreeSpinsLeft {},
+
+    #[error("beacon fee error: {beacon_fee}")]
+    BeaconFeeError { beacon_fee: String },
 }
