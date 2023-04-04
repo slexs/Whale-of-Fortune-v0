@@ -358,13 +358,13 @@
 //     fn test_get_outcome_from_entropy() {
 
 //         let rule_set =  RuleSet {
-//             zero: Uint128::new(24),
-//             one: Uint128::new(12),
-//             two: Uint128::new(8),
-//             three: Uint128::new(4),
-//             four: Uint128::new(2),
-//             five: Uint128::new(1),
-//             six: Uint128::new(1),
+//             zero: Uint128::new(1),
+//             one: Uint128::new(3),
+//             two: Uint128::new(5),
+//             three: Uint128::new(10),
+//             four: Uint128::new(20),
+//             five: Uint128::new(45),
+//             six: Uint128::new(45),
 //         }; 
 
 //         // Valid, entropy will result in result = 0
@@ -374,12 +374,48 @@
 //         assert!(outcome[0] <= 6);
 //         assert!(outcome[0] == 0);
 
-//         // Valid, entropy will result in result = 4
+//         // Valid, entropy will result in result = 0
 //         let entropy = hex::decode("54c86044dfdd18902279243ce80741ab186cba4027c137fab649b861fb328da77b3bebe62783c76b96fc34381a855f9383d9d20ff83fbc3ecbab7c90d1b597ba").unwrap();
 //         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
 //         assert!(outcome.len() == 1);
 //         assert!(outcome[0] <= 6);
-//         assert!(outcome[0] == 4);
+//         assert!(outcome[0] == 0);
+
+//         // Valid, entropy will result in result = 0
+//         let entropy = hex::decode("2c5e77254df7b533472cdb54413150981b82f98368a2e7a5574fc7ed7fec52de5573bf25d587c2c1ec91728d1b9d6e9e8cc83d99ec2399bdcbd84e7126ea39a1").unwrap();
+//         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+//         assert!(outcome.len() == 1);
+//         assert!(outcome[0] <= 6);
+//         assert!(outcome[0] == 0);
+
+//         // Valid, entropy will result in result = 2
+//         let entropy = hex::decode("418292d2d2857695eea3809412a789f05753328af24bba6cf0fb0d280f97a16f189ba9143a89c53410ed53b2ef1b982e6a6af8a5614de2c01d085e26cbd12311").unwrap();
+//         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+//         assert!(outcome.len() == 1);
+//         assert!(outcome[0] <= 6);
+//         assert!(outcome[0] == 2);
+
+//         // Valid, entropy will result in result = 1
+//         let entropy = hex::decode("cf12dd2f9e6519d253db082c565f0fc4c40d6ae7c6c51eafe29591324543e7ce2875f9d9fe0182967fc66086a7673bced5b7ba943b856641f005e1583370d4f2").unwrap();
+//         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+//         assert!(outcome.len() == 1);
+//         assert!(outcome[0] <= 6);
+//         assert!(outcome[0] == 1);
+
+//         // Valid, entropy will result in result = 1
+//         let entropy = hex::decode("91e0cc53d16cf6f0c7029e83af1f99337ff171bb14710f3246c7c9b24af8743643d2e9d2877ee8f023923ffe2676fc53f00a9999c38200cd3be8eaaf2e9cef08").unwrap();
+//         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+//         assert!(outcome.len() == 1);
+//         assert!(outcome[0] <= 6);
+//         // assert!(outcome[0] == 1);
+
+//         // Valid, entropy will result in result = 1
+//         let entropy = hex::decode("5b0cde16c345b7faae6898f93641469ec398a4aed349cea3233416281cab5b569dadffbca48ddecca09357875d5bd5e24b7387b4601b7d3012bfc719531c82d5").unwrap();
+//         let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+//         assert!(outcome.len() == 1);
+//         assert!(outcome[0] <= 6);
+//         // assert!(outcome[0] == 1);
+
 
 //         // Test entropy with empty input 
 //         let entropy = hex::decode("").unwrap();

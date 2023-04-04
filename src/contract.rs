@@ -69,11 +69,10 @@ pub fn execute(
             let sent_amount: Uint128 = info.funds.iter().map(|c| c.amount).sum();
 
             // How much gas our callback will use. This is an educated guess, so we usually want to overestimate.
-            let callback_gas_limit = 100_000u64;
+            let callback_gas_limit = 150_000u64;
 
             // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
-            let beacon_fee = 10u64; 
-                // CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
+            let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
 
             // Check if the user sent enough funds to cover the fee.
             if sent_amount < Uint128::from(beacon_fee) {
@@ -82,13 +81,25 @@ pub fn execute(
 
             let idx = IDX.load(deps.storage)?;
 
+            let rule_set =  RuleSet {
+                zero: Uint128::new(1),
+                one: Uint128::new(3),
+                two: Uint128::new(5),
+                three: Uint128::new(10),
+                four: Uint128::new(20),
+                five: Uint128::new(45),
+                six: Uint128::new(45),
+            }; 
+
             // Create a new game state
-            let game = Game::new_game(
+            let mut game = Game::new_game(
                 &info.sender.to_string(), 
                 idx.into(), 
                 bet_number.into(), 
-                sent_amount.into()
+                sent_amount.into(), 
             );
+
+            game.rule_set = rule_set;
 
 
             // Get the balance of the house bankroll (contract address balance)
@@ -212,7 +223,7 @@ pub fn execute(
             let outcome = result.clone(); 
 
             // Check if player history exists for this player: if not, create a new instance of it and save it, if err throw message
-            let mut player_history = match PLAYER_HISTORY.may_load(deps.storage, info.sender.clone().to_string()) {
+            let mut player_history = match PLAYER_HISTORY.may_load(deps.storage, game.player.clone().to_string()) {
                 Ok(Some(player_history)) => player_history,
                 Ok(None) => PlayerHistory::new(game.player.clone()),
                 Err(_) => return Err(ContractError::UnableToLoadPlayerHistory {player_addr: info.sender.to_string()}),
