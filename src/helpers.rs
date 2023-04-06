@@ -116,6 +116,12 @@ pub fn update_player_history_win(player_history: &mut PlayerHistory, bet_size: U
     player_history.wins += Uint128::new(1);
     player_history.total_coins_spent.amount += bet_size;
     player_history.total_coins_won.amount += calculated_payout;
+
+    // Give player a free spin for every 5 games played 
+    if player_history.games_played == Uint128::new(5) {
+        player_history.free_spins += Uint128::new(1); 
+    }
+
     player_history
 }
 
@@ -123,6 +129,12 @@ pub fn update_player_history_loss(player_history: &mut PlayerHistory, bet_size: 
     player_history.games_played += Uint128::new(1);
     player_history.losses += Uint128::new(1);
     player_history.total_coins_spent.amount += bet_size;
+    
+    // Give player a free spin for every 5 games played 
+    if player_history.games_played == Uint128::new(5) {
+        player_history.free_spins += Uint128::new(1); 
+    }
+
     player_history
 }
 

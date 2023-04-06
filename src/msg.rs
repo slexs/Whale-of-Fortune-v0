@@ -16,6 +16,7 @@ pub struct EntropyCallbackData {
 #[cw_serde]
 pub enum ExecuteMsg {
     Spin { bet_number: Uint128 },
+    FreeSpin { bet_number: Uint128 },
     ReceiveEntropy(EntropyCallbackMsg),
 }
 

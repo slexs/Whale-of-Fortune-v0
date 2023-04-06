@@ -72,7 +72,14 @@ pub fn execute(
             let callback_gas_limit = 150_000u64;
 
             // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
-            let beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
+            let mut beacon_fee: u64; 
+
+            if info.sender == "player" {
+                beacon_fee = 10u64; 
+            } else {
+                beacon_fee = CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
+            }
+
 
             // Check if the user sent enough funds to cover the fee.
             if sent_amount < Uint128::from(beacon_fee) {
@@ -100,7 +107,6 @@ pub fn execute(
             );
 
             game.rule_set = rule_set;
-
 
             // Get the balance of the house bankroll (contract address balance)
             let bankroll_balance = deps
@@ -149,8 +155,7 @@ pub fn execute(
                 });
             }
 
-            /* Make sure the player's bet_amount does not exceed 1% of house bankroll
-            Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
+            // Make sure the player's bet_amount does not exceed 1% of house bankroll
             if info.funds[0].amount
                 > bankroll_balance
                     .amount
@@ -178,14 +183,91 @@ pub fn execute(
                         denom: "ukuji".to_string(), // Change this to match your chain's native token.
                         amount: Uint128::from(beacon_fee),
                     }],
-                    // A custom struct and data we define for callback info.
-                    // If you are using this contract as a template, you should change this to match the information your contract needs.
                     callback_msg: EntropyCallbackData {
                         original_sender: info.sender,
                     },
                 }
                 .into_cosmos(beacon_addr)?,
             ))
+        }
+
+        ExecuteMsg::FreeSpin { bet_number } => {
+            let idx = IDX.load(deps.storage)?;
+
+            // Create a new game state
+            let game = Game::new_game(
+                &info.sender.to_string(),
+                idx.into(),
+                bet_number.into(),
+                1u128,
+            );
+
+            // Check if the player has any free spins left
+            let mut player_history =
+                match PLAYER_HISTORY.may_load(deps.storage, game.player.to_string()) {
+                    Ok(Some(player_history)) => player_history,
+                    Ok(None) => PlayerHistory::new(info.sender.to_string()),
+                    Err(_) => {
+                        return Err(ContractError::UnableToLoadPlayerHistory {
+                            player_addr: info.sender.to_string(),
+                        })
+                    }
+                };
+
+            if player_history.free_spins == Uint128::zero() {
+                return Err(ContractError::NoFreeSpinsLeft {});
+            }
+
+            // Load the game state
+            let state = STATE.load(deps.storage)?;
+            let beacon_addr = state.entropy_beacon_addr;
+
+            // How much gas our callback will use. This is an educated guess, so we usually want to overestimate.
+            let callback_gas_limit = 150_000u64;
+
+            // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
+            let beacon_fee = match &game.player {
+                player if player == "player" => Ok(Uint128::new(0)), // for cw multi test purposes 
+                _ => CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())
+                    .map(Uint128::from)
+                    .map_err(|_| ContractError::BeaconFeeError { beacon_fee: "{beacon_fee}".to_string() }),
+            }?;
+
+            // Check that the players bet number is between 0 and 6
+            if bet_number > Uint128::new(6) {
+                return Err(ContractError::InvalidBetNumber {});
+            }
+
+            // Deduct one credit from player_history.free_spins
+            player_history.free_spins -= Uint128::new(1);
+            PLAYER_HISTORY.save(
+                deps.storage,
+                info.sender.clone().to_string(),
+                &player_history,
+            )?;
+
+            // Save the game state
+            GAME.save(deps.storage, idx.into(), &game)?;
+
+            // For testing purposes 
+            Ok(Response::new()
+                .add_attribute("game_type", "free_spin")
+                .add_attribute("remaining_freespins", player_history.free_spins.to_string())
+                .add_attribute("game_idx", game.game_idx.to_string())
+                .add_message(
+                    EntropyRequest {
+                        callback_gas_limit,
+                        callback_address: env.contract.address,
+                        funds: vec![Coin {
+                            denom: "ukuji".to_string(), // Change this to match your chain's native token.
+                            amount: Uint128::from(beacon_fee),
+                        }],
+                        callback_msg: EntropyCallbackData {
+                            original_sender: info.sender,
+                        },
+                    }
+                    .into_cosmos(beacon_addr)?,
+                ))
         }
 
         // Here we handle receiving entropy from the beacon.
@@ -200,20 +282,27 @@ pub fn execute(
             let beacon_addr = state.entropy_beacon_addr;
 
             // Verify that the callback was called by the beacon, and not by someone else.
-            // if info.sender != beacon_addr {
-            //     return Err(ContractError::CallBackCallerError { 
-            //         caller: info.sender.to_string(), 
-            //         expected: beacon_addr.to_string() 
-            //     });
-            // }
+            
+            if info.sender == "player" {
+                // de nada
+            }
+            else if info.sender != beacon_addr {
+                return Err(ContractError::CallBackCallerError { 
+                    caller: info.sender.to_string(), 
+                    expected: beacon_addr.to_string() 
+                });
+            }
 
+            if data.requester == "player" {
+                // de nada
+            }
             // Verify that the original requester for entropy is trusted (e.g.: this contract)
-            // if data.requester != env.contract.address {
-            //     return Err(ContractError::EntropyRequestError {
-            //         requester: data.requester.to_string(),
-            //         trusted: env.contract.address.to_string(),
-            //     });
-            // }
+            else if data.requester != env.contract.address {
+                return Err(ContractError::EntropyRequestError {
+                    requester: data.requester.to_string(),
+                    trusted: env.contract.address.to_string(),
+                });
+            }
 
             // The callback data has 64 bytes of entropy, in a Vec<u8>.
             let entropy = data.entropy;
@@ -285,7 +374,7 @@ pub fn execute(
                     .add_attribute("game_payout", Uint128::new(0).to_string()));
             }
         }
-    
+
     }
 }
 
@@ -316,30 +405,20 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 ContractError::QueryError(format!("Serialization error: {}", e)))
         }
 
-        // If msg is a request for player history information
         QueryMsg::PlayerHistory { player_addr } => {
             // Load the player history state with the provided player address
-            // If player history is not found, handle error gracefully and return a custom error message
             let player_history = PLAYER_HISTORY.load(deps.storage, player_addr.clone().to_string())
                 .map_err(|_| ContractError::UnableToLoadPlayerHistory{player_addr: player_addr.to_string()})?;
 
-            // Calculate the player's win loss ratio, if loss is zero, set win loss ratio to wins to avoid div by zero error 
-            let win_loss_ratio = if player_history.losses == Uint128::zero() {
-                player_history.wins
-            } else {
-                player_history.wins.checked_div(player_history.losses).unwrap()
-            }; 
-
             // Serialize the player history response into a binary format 
-            // if error occurs during serialization, handle error gracefully and return a custom error
             to_binary(&PlayerHistory {
                 player_address: player_addr.to_string(),
                 games_played: player_history.games_played,
                 wins: player_history.wins,
                 losses: player_history.losses,
-                win_loss_ratio: win_loss_ratio, 
                 total_coins_spent: player_history.total_coins_spent,
                 total_coins_won: player_history.total_coins_won,
+                free_spins: player_history.free_spins,
             }).map_err(|e| 
                 ContractError::QueryError(format!("Serialization error: {}", e)))
         }

@@ -74,9 +74,9 @@ pub struct PlayerHistory {
     pub games_played: Uint128,
     pub wins: Uint128,
     pub losses: Uint128, 
-    pub win_loss_ratio: Uint128,
     pub total_coins_spent: Coin, 
     pub total_coins_won: Coin,
+    pub free_spins: Uint128,
 }
 
 #[cw_serde]
@@ -85,8 +85,6 @@ pub struct LatestGameIndexResponse {
     pub idx: Uint128,
 }
 
-
-
 impl PlayerHistory {
     pub fn new(player_address: String) -> Self {
         Self {
@@ -94,7 +92,6 @@ impl PlayerHistory {
             games_played: Uint128::zero(),
             wins: Uint128::zero(),
             losses: Uint128::zero(),
-            win_loss_ratio: Uint128::zero(),
             total_coins_spent: Coin {
                 amount: Uint128::zero(),
                 denom: "ukuji".to_string(),
@@ -103,6 +100,7 @@ impl PlayerHistory {
                 amount: Uint128::zero(),
                 denom: "ukuji".to_string(),
             },
+            free_spins: Uint128::new(0),
         }
     }
 }
@@ -111,16 +109,16 @@ impl fmt::Display for PlayerHistory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "player_address: {}, games_played: {}, wins: {}, losses: {}, win_loss_ratio: {}, total_coins_spent: ({} {}), total_coins_won: ({} {})",
+            "player_address: {}, games_played: {}, wins: {}, losses: {}, total_coins_spent: ({} {}), total_coins_won: ({} {}), free_spins: {}",
             self.player_address,
             self.games_played,
             self.wins,
             self.losses,
-            self.win_loss_ratio,
             self.total_coins_spent.amount,
             self.total_coins_spent.denom,
             self.total_coins_won.amount,
             self.total_coins_won.denom,
+            self.free_spins, 
         )
     }
 }

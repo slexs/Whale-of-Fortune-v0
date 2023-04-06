@@ -69,4 +69,10 @@ pub enum ContractError {
 
     #[error("UnableToLoadGameIndex")]
     UnableToLoadGameIndex{},
+
+    #[error("No Freespins left")]
+    NoFreeSpinsLeft {}, 
+
+    #[error("beacon fee error: {beacon_fee}")]
+    BeaconFeeError { beacon_fee: String },
 }
