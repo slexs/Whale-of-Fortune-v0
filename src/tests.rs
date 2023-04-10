@@ -9,11 +9,12 @@ pub mod tests {
     use entropy_beacon_cosmos::{EntropyRequest, EntropyCallbackMsg, CalculateFeeQuery};
     use entropy_beacon_cosmos::msg::QueryMsg as BeaconQueryMsg;
     use entropy_beacon_cosmos::msg::ExecuteMsg as BeaconExecuteMsg;
-    use crate::contract::{execute, instantiate};
+    use crate::contract::{execute, instantiate, query};
     use crate::helpers::{calculate_payout, get_outcome_from_entropy, update_leaderboard, query_leaderboard, calculate_beacon_fee};
     use crate::state::{RuleSet, State, Game, PLAYER_HISTORY, PlayerHistory, STATE, IDX, GAME};
-    use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData};
+    use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData, QueryMsg, GameResponse};
     use cosmwasm_std::Binary;
+    use crate::error::ContractError;
 
     #[test]
     fn test_proper_initialization() {
@@ -316,6 +317,55 @@ pub mod tests {
     }
 
     #[test]
+    fn test_free_spin_no_freespins_left() {
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
+        let env = mock_env();
+        let info = mock_info("player", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(0)}]);
+
+        // Set up the contract state and index
+        let state = State {
+            entropy_beacon_addr: Addr::unchecked("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3"),
+            house_bankroll: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(1000),
+            },
+        };
+        STATE.save(&mut deps.storage, &state).unwrap();
+        let idx = Uint128::zero();
+        IDX.save(&mut deps.storage, &idx).unwrap();
+
+        let player_history = PlayerHistory {
+            player_address: info.sender.to_string(),
+            wins: Uint128::zero(), 
+            losses: Uint128::zero(),
+            games_played: Uint128::zero(),
+            total_coins_spent: Coin{denom: "ukuji".to_string(), amount: Uint128::zero()},
+            total_coins_won: Coin{denom: "ukuji".to_string(), amount: Uint128::zero()}, 
+            free_spins: Uint128::zero(),
+
+        };
+
+        PLAYER_HISTORY.save(&mut deps.storage, info.sender.to_string(), &player_history).unwrap();
+
+        // Call the Spin function
+        let bet_number = Uint128::new(3);
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            ExecuteMsg::FreeSpin { bet_number },
+        ); 
+
+        assert_eq!(
+            res,
+            Err(ContractError::NoFreeSpinsLeft {}),
+            "Expected ContractError::NoFreeSpinsLeft, got: {:?}",
+            res
+        );
+    }
+
+    #[test]
     fn test_recieve_entropy() {
         // Define mock dependencies and environment
         let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
@@ -363,6 +413,132 @@ pub mod tests {
     
         assert_eq!(res.messages.len(), 0);
     }
+
+    #[test]
+    fn test_recieve_entropy_with_player_history() {
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
+        let info = mock_info("player", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
+        let env = mock_env();
+        let entropy = vec![1u8; 64];
+
+        let idx = Uint128::zero();
+        IDX.save(&mut deps.storage, &idx).unwrap();
+
+        let game = Game::new_game(
+            &info.sender.to_string(), 
+            idx.into(),
+            6u128,
+            10u128,
+
+        );
+
+        let player_history = PlayerHistory{
+            player_address: info.sender.to_string(),
+            wins: Uint128::new(1), 
+            losses: Uint128::new(2),
+            games_played: Uint128::new(3),
+            total_coins_spent: Coin{denom: "ukuji".to_string(), amount: Uint128::new(3)},
+            total_coins_won: Coin{denom: "ukuji".to_string(), amount: Uint128::new(1)}, 
+            free_spins: Uint128::zero(),
+        };
+
+        PLAYER_HISTORY.save(&mut deps.storage, info.sender.to_string(), &player_history).unwrap();
+
+        GAME.save(&mut deps.storage, idx.into(), &game).unwrap();
+
+        let state = State {
+            entropy_beacon_addr: Addr::unchecked("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3"),
+            house_bankroll: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(1000),
+            },
+        };
+
+        STATE.save(&mut deps.storage, &state).unwrap();
+
+        let entropy_callback_msg = EntropyCallbackMsg {
+            entropy: vec![1u8; 64],
+            requester: info.sender.clone(),
+            msg: Binary::from(b"arbitrary data".to_vec()),
+        };
+
+        // Call the ReceiveEntropy function
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3", &[]),
+            ExecuteMsg::ReceiveEntropy(entropy_callback_msg),
+        )
+        .unwrap();
+    
+        assert_eq!(res.messages.len(), 0);
+    }
+
+    /* #[test]
+    fn test_recieve_entropy_err_no_game_player() {
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
+        let info = mock_info("player", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
+        let env = mock_env();
+        let entropy = vec![1u8; 64];
+
+        let idx = Uint128::zero();
+        IDX.save(&mut deps.storage, &idx).unwrap();
+
+        // let game = Game::new_game(
+        //     &"".to_string(), 
+        //     idx.into(),
+        //     6u128,
+        //     10u128,
+
+        // );
+
+        let player_history = PlayerHistory{
+            player_address: info.sender.to_string(),
+            wins: Uint128::new(1), 
+            losses: Uint128::new(2),
+            games_played: Uint128::new(3),
+            total_coins_spent: Coin{denom: "ukuji".to_string(), amount: Uint128::new(3)},
+            total_coins_won: Coin{denom: "ukuji".to_string(), amount: Uint128::new(1)}, 
+            free_spins: Uint128::zero(),
+        };
+
+        PLAYER_HISTORY.save(&mut deps.storage, info.sender.to_string(), &player_history).unwrap();
+
+        // GAME.save(&mut deps.storage, idx.into(), &game).unwrap();
+
+        let state = State {
+            entropy_beacon_addr: Addr::unchecked("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3"),
+            house_bankroll: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(1000),
+            },
+        };
+
+        STATE.save(&mut deps.storage, &state).unwrap();
+
+        let entropy_callback_msg = EntropyCallbackMsg {
+            entropy: vec![1u8; 64],
+            requester: info.sender.clone(),
+            msg: Binary::from(b"arbitrary data".to_vec()),
+        };
+
+        // Call the ReceiveEntropy function
+        let res = execute(
+            deps.as_mut(),
+            env.clone(),
+            mock_info("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3", &[]),
+            ExecuteMsg::ReceiveEntropy(entropy_callback_msg),
+        );
+    
+        assert_eq!(
+            res,
+            Err(ContractError::UnableToLoadPlayerHistory {player_addr: "".to_string()}),
+            "ContractError::UnableToLoadPlayerHistory, got: {:?}",
+            res
+        );
+    } */
 
     #[test]
     fn test_player_history() {
@@ -571,6 +747,100 @@ pub mod tests {
         assert_eq!(leaderboard[1].wins, Uint128::from(1u64));
         assert_eq!(leaderboard[2].player, player3);
         assert_eq!(leaderboard[2].wins, Uint128::from(1u64));
+    }
+
+    #[test]
+    fn test_query_game() {
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
+        let env = mock_env();
+        let info = mock_info("player", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
+    
+        // Set up the contract state and index
+        let state = State {
+            entropy_beacon_addr: Addr::unchecked("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3"),
+            house_bankroll: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(1000),
+            },
+        };
+        STATE.save(&mut deps.storage, &state).unwrap();
+        let idx = Uint128::zero();
+        IDX.save(&mut deps.storage, &idx).unwrap();
+    
+        // Set up initial game state and save it in storage
+        let game = Game {
+            player: info.sender.to_string(),
+            game_idx: idx.into(),
+            bet_number: Uint128::new(3).into(),
+            bet_size: info.funds[0].amount.clone().into(),
+            outcome: "Pending".to_string(),
+            played: false,
+            win: false,
+            payout: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::zero(),
+            },
+            rule_set: RuleSet {
+                zero: Uint128::new(1),
+                one: Uint128::new(3),
+                two: Uint128::new(5),
+                three: Uint128::new(10),
+                four: Uint128::new(20),
+                five: Uint128::new(45),
+                six: Uint128::new(45),
+            },
+        };
+        let game_key = idx.into();
+        GAME.save(&mut deps.storage, game_key, &game).unwrap();
+    
+        // Call the query function for QueryMsg::Game
+        let query_msg = QueryMsg::Game { idx };
+        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let game_response: GameResponse = from_binary(&res).unwrap();
+    
+        // Assert expected game response values
+        assert_eq!(game_response.idx, Uint128::new(game.game_idx));
+        assert_eq!(game_response.player, game.player);
+        assert_eq!(game_response.bet_number, Uint128::new(game.bet_number));
+        assert_eq!(game_response.bet_size, Uint128::new(game.bet_size));
+        assert_eq!(game_response.game_outcome, game.outcome);
+        assert_eq!(game_response.win, game.win);
+        assert_eq!(game_response.payout, game.payout);
+    }
+    
+    #[test]
+    fn test_query_player_history() {
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin { denom: "ukuji".to_string(), amount: Uint128::new(1000) }]);
+        let env = mock_env();
+        let player_addr = Addr::unchecked("player");
+
+        // Set up initial player history state and save it in storage
+        let player_history = PlayerHistory {
+            player_address: player_addr.to_string(),
+            games_played: Uint128::new(10),
+            wins: Uint128::new(4),
+            losses: Uint128::new(6),
+            total_coins_spent: Coin { denom: "ukuji".to_string(), amount: Uint128::new(100) } ,
+            total_coins_won: Coin { denom: "ukuji".to_string(), amount: Uint128::new(50) },
+            free_spins: Uint128::new(3),
+        };
+        PLAYER_HISTORY.save(&mut deps.storage, player_addr.to_string(), &player_history).unwrap();
+
+        // Call the query function for QueryMsg::PlayerHistory
+        let query_msg = QueryMsg::PlayerHistory { player_addr: player_addr.clone() };
+        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let player_history_response: PlayerHistory = from_binary(&res).unwrap();
+
+        // Assert expected player history response values
+        assert_eq!(player_history_response.player_address, player_addr.to_string());
+        assert_eq!(player_history_response.games_played, player_history.games_played);
+        assert_eq!(player_history_response.wins, player_history.wins);
+        assert_eq!(player_history_response.losses, player_history.losses);
+        assert_eq!(player_history_response.total_coins_spent, player_history.total_coins_spent);
+        assert_eq!(player_history_response.total_coins_won, player_history.total_coins_won);
+        assert_eq!(player_history_response.free_spins, player_history.free_spins);
     }
 
 

@@ -1,7 +1,7 @@
 use cosmwasm_std::{Uint128};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
     #[error("StdError: {0}")]
     StdError(#[from] cosmwasm_std::StdError),
