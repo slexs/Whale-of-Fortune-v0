@@ -2,7 +2,7 @@
 #[cfg(test)]
 pub mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance};
-    use cosmwasm_std::{Uint128, Coin, Addr, Response, coins, from_binary, to_binary, WasmMsg, CosmosMsg};
+    use cosmwasm_std::{Uint128, Coin, Addr, Response, coins, from_binary, to_binary, WasmMsg, CosmosMsg, DepsMut, MemoryStorage};
     use cw2::{set_contract_version, CONTRACT, get_contract_version};
     use entropy_beacon_cosmos::beacon::RequestEntropyMsg;
     use entropy_beacon_cosmos::provide::ActiveRequestsQuery;
@@ -10,7 +10,7 @@ pub mod tests {
     use entropy_beacon_cosmos::msg::QueryMsg as BeaconQueryMsg;
     use entropy_beacon_cosmos::msg::ExecuteMsg as BeaconExecuteMsg;
     use crate::contract::{execute, instantiate};
-    use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet};
+    use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet, update_leaderboard, query_leaderboard};
     use crate::state::{RuleSet, State, Game, PLAYER_HISTORY, PlayerHistory, STATE, IDX, GAME};
     use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData};
     use cosmwasm_std::Binary;
@@ -597,6 +597,36 @@ pub mod tests {
         let bet_number = Uint128::new(2);
         assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), false);
 
+    }
+
+    #[test]
+    fn test_leaderboard_update_and_query() {
+        let mut owned_deps = mock_dependencies_with_balance(&[Coin {
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(1000),
+        }]);
+        let mut deps = owned_deps.as_mut(); // Convert OwnedDeps to DepsMut
+    
+        let player1 = "player1".to_string();
+        let player2 = "player2".to_string();
+        let player3 = "player3".to_string();
+    
+        // Player 1 wins a game
+        update_leaderboard(&mut deps, &player1, Uint128::from(1u64));
+        // Player 2 wins two games
+        update_leaderboard(&mut deps, &player2, Uint128::from(2u64));
+        // Player 3 wins a game
+        update_leaderboard(&mut deps, &player3, Uint128::from(1u64));
+    
+        let leaderboard = query_leaderboard(deps);
+    
+        assert_eq!(leaderboard.len(), 3);
+        assert_eq!(leaderboard[0].player, player2);
+        assert_eq!(leaderboard[0].wins, Uint128::from(2u64));
+        assert_eq!(leaderboard[1].player, player1);
+        assert_eq!(leaderboard[1].wins, Uint128::from(1u64));
+        assert_eq!(leaderboard[2].player, player3);
+        assert_eq!(leaderboard[2].wins, Uint128::from(1u64));
     }
 
     

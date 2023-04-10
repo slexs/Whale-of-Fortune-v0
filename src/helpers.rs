@@ -1,8 +1,9 @@
-use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128, Coin};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128, from_slice, to_vec, Deps};
+use cosmwasm_storage::PrefixedStorage;
 use cw_utils::one_coin;
 use sha2::{Digest, Sha256};
 
-use crate::state::{RuleSet, PlayerHistory, Game};
+use crate::state::{RuleSet, PlayerHistory, Game, LeaderBoardEntry};
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {
@@ -208,4 +209,44 @@ pub fn execute_validate_bet(
     }
 
     true
+}
+
+
+pub fn update_leaderboard(deps: &mut DepsMut, player: &String, wins: Uint128) {
+    let leaderboard_key = "leaderboard";
+    let mut leaderboard: Vec<LeaderBoardEntry> = deps
+        .storage
+        .get(leaderboard_key.as_bytes())
+        .map(|value| from_slice(&value).unwrap())
+        .unwrap_or_else(|| vec![]);
+
+    let entry = leaderboard.iter_mut().find(|entry| &entry.player == player);
+
+    if let Some(existing_entry) = entry {
+        existing_entry.wins += wins;
+    } else {
+        leaderboard.push(LeaderBoardEntry {
+            player: player.to_string(),
+            wins,
+        });
+    }
+
+    leaderboard.sort_by(|a, b| b.wins.partial_cmp(&a.wins).unwrap());
+    leaderboard.truncate(5);
+
+    deps.storage.set(
+        leaderboard_key.as_bytes(),
+        &to_vec(&leaderboard).unwrap(),
+    );
+}
+
+pub fn query_leaderboard(deps: Deps) -> Vec<LeaderBoardEntry> {
+    let leaderboard_key = "leaderboard";
+    let leaderboard: Vec<LeaderBoardEntry> = deps
+        .storage
+        .get(leaderboard_key.as_bytes())
+        .map(|value| from_slice(&value).unwrap())
+        .unwrap_or_else(|| vec![]);
+
+    leaderboard
 }

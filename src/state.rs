@@ -67,6 +67,8 @@ impl Game {
     }    
 }
 
+
+
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
 pub struct PlayerHistory {
@@ -77,6 +79,13 @@ pub struct PlayerHistory {
     pub total_coins_spent: Coin, 
     pub total_coins_won: Coin,
     pub free_spins: Uint128,
+}
+
+#[cw_serde]
+#[serde(rename_all = "snake_case")]
+pub struct Leaderboard {
+    pub player_address: String,
+    pub wins: u64,
 }
 
 #[cw_serde]
@@ -121,6 +130,13 @@ impl fmt::Display for PlayerHistory {
             self.free_spins, 
         )
     }
+}
+
+#[cw_serde]
+#[serde(rename_all = "snake_case")]
+pub struct LeaderBoardEntry {
+    pub player: String, 
+    pub wins: Uint128, 
 }
 
 #[cw_serde]

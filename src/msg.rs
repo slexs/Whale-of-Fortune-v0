@@ -1,7 +1,7 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
 use cosmwasm_std::{Addr, Uint128, Coin};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
-use crate::state::{PlayerHistory, LatestGameIndexResponse};
+use crate::state::{PlayerHistory, LatestGameIndexResponse, LeaderBoardEntry};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -31,6 +31,9 @@ pub enum QueryMsg {
 
     #[returns(LatestGameIndexResponse)]
     LatestGameIndex {}, 
+
+    #[returns(Vec<LeaderBoardEntry>)] // Modify return type according to the new struct
+    LeaderBoard {},
 }
 
 #[cw_serde]

@@ -14,7 +14,7 @@ use crate::msg::{
 };
 use crate::state::{Game, RuleSet, PlayerHistory, State, GAME, IDX, STATE, PLAYER_HISTORY, LatestGameIndexResponse};
 
-use crate::helpers::{calculate_payout, /* execute_validate_bet ,*/ get_outcome_from_entropy, update_player_history_win, update_game_state_for_win, update_game_state_for_loss, update_player_history_loss};
+use crate::helpers::{calculate_payout, update_leaderboard, query_leaderboard, get_outcome_from_entropy, update_player_history_win, update_game_state_for_win, update_game_state_for_loss, update_player_history_loss};
 
 // use cw_storage_plus::Map;
 
@@ -348,6 +348,11 @@ pub fn execute(
                         amount: calculated_payout,
                     }],
                 };
+
+                // Create a mutable binding for deps 
+                let mut deps_mut = deps; 
+
+                update_leaderboard(&mut deps_mut, &game.player.clone(), Uint128::from(1u64)); 
             
                 return Ok(Response::new()
                     .add_message(_payout_msg)
@@ -435,6 +440,11 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
                 idx: idx.into(),
             }).map_err(|e| 
                 ContractError::QueryError(format!("Serialization error in LatestGameIndexResponse: {}", e)))
+        }
+    
+        QueryMsg::LeaderBoard {  } => {
+            let leaderboard = query_leaderboard(deps);
+            Ok(to_binary(&leaderboard)?) 
         }
     }
 }
