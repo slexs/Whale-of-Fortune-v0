@@ -81,12 +81,12 @@ pub struct PlayerHistory {
     pub free_spins: Uint128,
 }
 
-#[cw_serde]
-#[serde(rename_all = "snake_case")]
-pub struct Leaderboard {
-    pub player_address: String,
-    pub wins: u64,
-}
+// #[cw_serde]
+// #[serde(rename_all = "snake_case")]
+// pub struct Leaderboard {
+//     pub player_address: String,
+//     pub wins: u64,
+// }
 
 #[cw_serde]
 #[serde(rename_all = "snake_case")]

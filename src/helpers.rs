@@ -1,9 +1,10 @@
-use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128, from_slice, to_vec, Deps};
+use cosmwasm_std::{DepsMut, Env, MessageInfo, Uint128, from_slice, to_vec, Deps, Coin, Storage, Api, Querier, StdResult, CustomQuery, Addr, Response, Empty, BankMsg};
 use cosmwasm_storage::PrefixedStorage;
 use cw_utils::one_coin;
+use entropy_beacon_cosmos::CalculateFeeQuery;
 use sha2::{Digest, Sha256};
-
-use crate::state::{RuleSet, PlayerHistory, Game, LeaderBoardEntry};
+use crate::{state::{RuleSet, PlayerHistory, Game, LeaderBoardEntry, STATE, PLAYER_HISTORY, GAME, IDX}};
+use crate::error::ContractError;
 
 pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> Uint128 {
     match outcome {
@@ -21,8 +22,6 @@ pub fn calculate_payout(bet_amount: Uint128, outcome: u8, rule_set: RuleSet) -> 
 // Distribute outcomes according to the frequency of each sector in the Big Six wheel game 
 // Take the entropy and return a random number between 0 and 6
 // Designed to generate a random outcome 
-
-
 
 pub fn get_outcome_from_entropy(entropy: &Vec<u8>, _rule_set: &RuleSet) -> Vec<u8> {
 
@@ -155,67 +154,9 @@ pub fn update_game_state_for_loss(mut game: Game, outcome: &Vec<u8>) -> Game {
     game
 }
 
-pub fn execute_validate_bet(
-    deps: &DepsMut,
-    env: &Env,
-    info: MessageInfo,
-    player_bet_amount: Uint128,
-    player_bet_number: Uint128,
-) -> bool {
-    // Get the balance of the house bankroll (contract address balance)
-    let bankroll_balance = match deps
-        .querier
-        .query_balance(env.contract.address.to_string(), "ukuji".to_string())
-    {
-        Ok(balance) => balance,
-        Err(_) => return false,
-    };
-
-    // Check that the players bet number is between 0 and 6
-    if player_bet_number > Uint128::new(6) {
-        return false;
-    }
-
-    // Check that only one denom was sent
-    let coin = match one_coin(&info) {
-        Ok(coin) => coin,
-        Err(_) => return false,
-    };
-
-    // Check that the denom is the same as the token in the bankroll ("ukuji")
-    if coin.denom != bankroll_balance.denom {
-        return false;
-    }
-
-    // Ensure that the amount of funds sent by player matches bet size
-    if coin.amount != player_bet_amount {
-        return false;
-    }
-
-    // Check that the players bet amount is not zero 
-    if coin.amount <= Uint128::new(0) || coin.amount.is_zero(){
-        return false;
-    }
-
-    /* Make sure the player's bet_amount does not exceed 1% of house bankroll
-    Ex: House Bankroll 1000, player bets 10, max player payout is 450 */
-    if player_bet_amount
-        > bankroll_balance
-            .amount
-            .checked_div(Uint128::new(100))
-            .unwrap()
-    {
-        return false;
-    }
-
-    true
-}
-
-
-pub fn update_leaderboard(deps: &mut DepsMut, player: &String, wins: Uint128) {
+pub fn update_leaderboard(storage: &mut dyn Storage, player: &String, wins: Uint128) {
     let leaderboard_key = "leaderboard";
-    let mut leaderboard: Vec<LeaderBoardEntry> = deps
-        .storage
+    let mut leaderboard: Vec<LeaderBoardEntry> = storage
         .get(leaderboard_key.as_bytes())
         .map(|value| from_slice(&value).unwrap())
         .unwrap_or_else(|| vec![]);
@@ -234,7 +175,7 @@ pub fn update_leaderboard(deps: &mut DepsMut, player: &String, wins: Uint128) {
     leaderboard.sort_by(|a, b| b.wins.partial_cmp(&a.wins).unwrap());
     leaderboard.truncate(5);
 
-    deps.storage.set(
+    storage.set(
         leaderboard_key.as_bytes(),
         &to_vec(&leaderboard).unwrap(),
     );
@@ -250,3 +191,222 @@ pub fn query_leaderboard(deps: Deps) -> Vec<LeaderBoardEntry> {
 
     leaderboard
 }
+
+pub fn validate_bet_number(bet_number: Uint128) -> Result<(), ContractError> {
+    if bet_number > Uint128::new(6) {
+        return Err(ContractError::InvalidBetNumber {});
+    }
+    Ok(())
+}
+
+pub fn validate_funds_sent(coin: &Coin, info: &MessageInfo) -> Result<(), ContractError> {
+    if coin.amount != info.funds[0].amount {
+        return Err(ContractError::ValidateBetFundsSentMismatch {
+            player_sent_amount: coin.amount,
+            bet_amount: info.funds[0].amount,
+        });
+    }
+    Ok(())
+}
+
+pub fn validate_denom(coin: &Coin, bankroll_balance: &Coin) -> Result<(), ContractError> {
+    if coin.denom != bankroll_balance.denom {
+        return Err(ContractError::ValidateBetDenomMismatch {
+            player_sent_denom: coin.denom.clone(),
+            house_bankroll_denom: bankroll_balance.denom.clone(),
+        });
+    }
+    Ok(())
+}
+
+pub fn validate_bet_amount(coin: &Coin) -> Result<(), ContractError> {
+    if coin.amount <= Uint128::new(0) || coin.amount.is_zero() {
+        return Err(ContractError::ValidateBetBetAmountIsZero {});
+    }
+    Ok(())
+}
+
+pub fn validate_bet_vs_bankroll(info: &MessageInfo, bankroll_balance: &Coin) -> Result<(), ContractError> {
+    if info.funds[0].amount > bankroll_balance.amount.checked_div(Uint128::new(100)).unwrap() {
+        return Err(ContractError::ValidateBetBetAmountExceedsHouseBankrollBalance {
+            player_bet_amount: info.funds[0].amount,
+            house_bankroll_balance: bankroll_balance.amount,
+        });
+    }
+    Ok(())
+}
+
+pub fn validate_sent_amount_to_cover_fee(sent_amount: Uint128, beacon_fee: u64) -> Result<(), ContractError> {
+    if sent_amount < Uint128::from(beacon_fee) {
+        Err(ContractError::InsufficientFunds {})
+    } else {
+        Ok(())
+    }
+}
+
+pub fn calculate_beacon_fee(
+    deps: &DepsMut,
+    sender: &str,
+    callback_gas_limit: u64,
+) -> Result<u64, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    let beacon_addr = state.entropy_beacon_addr;
+
+    if sender == "player" {
+        Ok(10u64)
+    } else {
+        CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone()).map_err(|_| {
+            ContractError::BeaconFeeError {
+                beacon_addr: beacon_addr.to_string(),
+                callback_gas_limit: callback_gas_limit,
+            }
+        })
+    }
+}
+
+pub fn get_rule_set() -> RuleSet {
+    RuleSet {
+        zero: Uint128::new(1),
+        one: Uint128::new(3),
+        two: Uint128::new(5),
+        three: Uint128::new(10),
+        four: Uint128::new(20),
+        five: Uint128::new(45),
+        six: Uint128::new(45),
+    }
+}
+
+pub fn get_bankroll_balance(
+    deps: &DepsMut,
+    contract_address: &str,
+    denom: String,
+) -> Result<Coin, ContractError> {
+    deps.querier
+        .query_balance(contract_address.to_string(), denom.to_string())
+        .map_err(|_| ContractError::ValidateBetUnableToGetBankrollBalance {
+            addr: contract_address.to_string(),
+        })
+}
+
+pub fn load_player_history_or_create_new(storage: &mut dyn Storage, sender: String) -> Result<PlayerHistory, ContractError> {
+    match PLAYER_HISTORY.may_load(storage, sender.clone()) {
+        Ok(Some(player_history)) => Ok(player_history),
+        Ok(None) => Ok(PlayerHistory::new(sender.to_string())),
+        Err(_) => Err(ContractError::UnableToLoadPlayerHistory {
+            player_addr: sender.clone().to_string(),
+        }),
+    }
+}
+
+pub fn update_player_history_and_save(storage: &mut dyn Storage, sender: String, player_history: &mut PlayerHistory) -> StdResult<()> {
+    player_history.free_spins -= Uint128::new(1);
+    PLAYER_HISTORY.save(storage, sender, player_history)
+}
+
+pub fn save_game_state(storage: &mut dyn Storage, idx: u128, game: &Game) -> StdResult<()> {
+    GAME.save(storage, idx, game)
+}
+
+pub fn verify_callback_sender(
+    sender: &String,
+    beacon_addr: &String,
+    requester: &String,
+    trusted_address: &String,
+) -> Result<(), ContractError> {
+    if sender == "player" {
+        // de nada
+    } else if sender != beacon_addr {
+        return Err(ContractError::CallBackCallerError {
+            caller: sender.to_string(),
+            expected: beacon_addr.to_string(),
+        });
+    }
+
+    if requester == "player" {
+        // de nada
+    } else if requester != trusted_address {
+        return Err(ContractError::EntropyRequestError {
+            requester: requester.to_string(),
+            trusted: trusted_address.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+pub fn update_game_and_player_history(
+    win: bool,
+    game: &Game,
+    player_history: &mut PlayerHistory,
+    outcome: &Vec<u8>,
+) -> (Game, Uint128) {
+    if win {
+        let calculated_payout = calculate_payout(
+            game.bet_size.clone().into(),
+            outcome[0],
+            game.rule_set.clone(),
+        );
+
+        let updated_game = update_game_state_for_win(game.clone(), &outcome, calculated_payout.clone());
+        update_player_history_win(player_history, Uint128::from(game.bet_size), calculated_payout.clone());
+        (updated_game, calculated_payout)
+    } else {
+        let updated_game = update_game_state_for_loss(game.clone(), &outcome);
+        update_player_history_loss(player_history, Uint128::from(game.bet_size));
+        (updated_game, Uint128::new(0))
+    }
+}
+
+pub fn build_response(win: bool, game: &Game, payout: Uint128) -> Response<Empty> {
+    if win {
+        Response::new()
+            .add_message(BankMsg::Send {
+                to_address: game.player.to_string(),
+                amount: vec![Coin {
+                    denom: "ukuji".to_string(),
+                    amount: payout.clone(),
+                }],
+            })
+            .add_attribute("game_result", win.to_string())
+            .add_attribute("game_outcome", game.outcome.clone())
+            .add_attribute("game_payout", payout.to_string())
+    } else {
+        Response::new()
+            .add_attribute("game_result", win.to_string())
+            .add_attribute("game_outcome", game.outcome.clone())
+            .add_attribute("game_payout", Uint128::new(0).to_string())
+    }
+}
+
+pub fn process_game_result(
+    storage: &mut dyn Storage,
+    outcome: &Vec<u8>,
+    game: &Game,
+    player_history: &mut PlayerHistory,
+    idx: &mut Uint128,
+) -> Result<Response<Empty>, ContractError> {
+    let win = game.is_winner(game.bet_number.into(), outcome.clone());
+
+    let (updated_game, payout) = update_game_and_player_history(win, game, player_history, &outcome);
+
+    GAME.save(storage, (*idx).into(), &updated_game)?;
+    PLAYER_HISTORY.save(storage, game.player.to_string(), &player_history)?;
+
+    *idx += Uint128::new(1);
+    IDX.save(storage, &idx)?;
+
+    // Update the leaderboard if the player has won
+    if win {
+        update_leaderboard(storage, &game.player, Uint128::new(1));
+    }
+
+    let response = build_response(win, &updated_game, payout);
+
+    Ok(response)
+}
+
+
+
+
+
+

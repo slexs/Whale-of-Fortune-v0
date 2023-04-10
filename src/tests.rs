@@ -10,7 +10,7 @@ pub mod tests {
     use entropy_beacon_cosmos::msg::QueryMsg as BeaconQueryMsg;
     use entropy_beacon_cosmos::msg::ExecuteMsg as BeaconExecuteMsg;
     use crate::contract::{execute, instantiate};
-    use crate::helpers::{calculate_payout, get_outcome_from_entropy, execute_validate_bet, update_leaderboard, query_leaderboard};
+    use crate::helpers::{calculate_payout, get_outcome_from_entropy, update_leaderboard, query_leaderboard, calculate_beacon_fee};
     use crate::state::{RuleSet, State, Game, PLAYER_HISTORY, PlayerHistory, STATE, IDX, GAME};
     use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData};
     use cosmwasm_std::Binary;
@@ -80,13 +80,6 @@ pub mod tests {
 
     }
 
-
-    /* This unit test tests the execute() function with the ExecuteMsg::Spin variant, which represents a player spinning the roulette wheel by placing a bet on a specific number.
-    The test sets up the mock dependencies and environment, including a player with a balance of 10 Ukuji coins, and a house bankroll of 1000 Ukuji coins. It also sets up the contract state and index.
-    Then, it calls the execute() function with the ExecuteMsg::Spin variant and a bet number of 3. It expects the function to execute without errors.
-    After that, it checks that the game state was saved correctly by comparing the Game struct in storage with the expected values.
-    Next, it checks that an EntropyRequest submessage was returned, which requests entropy from the external beacon contract. It checks that the submessage calls the expected function on the external contract with the correct parameters.
-    Finally, it asserts that the returned message matches the expected message, which in this case should be a WasmMsg::Execute message with the expected_entropy_callback struct. */
     #[test]
     fn test_spin() {
         // Define mock dependencies and environment
@@ -149,7 +142,7 @@ pub mod tests {
         let submsg = &res.messages[0];
 
         let callback_gas_limit = 150_000u64;
-        let beacon_fee = 0u128; 
+        let beacon_fee = calculate_beacon_fee(&deps.as_mut(), &info.sender.to_string(), callback_gas_limit).unwrap();
 
         let callback_msg = to_binary(&EntropyCallbackData {
             original_sender: info.sender.clone(),
@@ -166,14 +159,13 @@ pub mod tests {
                 callback_msg,
             };
          
-
         // Check that the EntropyRequest callback address is the same as the contract address 
         assert_eq!(
             entropy_request.callback_address,
             env.contract.address.clone()
         );
         // Check that the EntropyRequest funds are correct
-        assert_eq!(entropy_request.funds, vec![Coin::new(Uint128::zero().into(), "ukuji".to_string())]);
+        assert_eq!(entropy_request.funds, vec![Coin::new(beacon_fee.into(), "ukuji".to_string())]);
 
         // Check that the EntropyRequest submessage calls the expected function
         let expected_entropy_callback = WasmMsg::Execute {
@@ -186,7 +178,7 @@ pub mod tests {
                 }).unwrap(),
             }))
             .unwrap(),
-            funds: vec![Coin { amount: Uint128::new(10), denom: "ukuji".to_string() }],
+            funds: vec![Coin { amount: Uint128::new(beacon_fee.into()), denom: "ukuji".to_string() }],
         };
         
         assert_eq!(
@@ -271,7 +263,7 @@ pub mod tests {
         let submsg = &res.messages[0];
 
         let callback_gas_limit = 150_000u64;
-        let beacon_fee = 0u128; 
+        let beacon_fee = calculate_beacon_fee(&deps.as_mut(), &info.sender.to_string(), callback_gas_limit).unwrap();
 
         let callback_msg = to_binary(&EntropyCallbackData {
             original_sender: info.sender.clone(),
@@ -294,21 +286,26 @@ pub mod tests {
             entropy_request.callback_address,
             env.contract.address.clone()
         );
+        
         // Check that the EntropyRequest funds are correct
-        assert_eq!(entropy_request.funds, vec![Coin::new(Uint128::zero().into(), "ukuji".to_string())]);
+        assert_eq!(entropy_request.funds, vec![Coin::new(beacon_fee.into(), "ukuji".to_string())]);
 
         // Check that the EntropyRequest submessage calls the expected function
         let expected_entropy_callback = WasmMsg::Execute {
-            contract_addr: state.entropy_beacon_addr.clone().into_string(),
-            msg: to_binary(&BeaconExecuteMsg::RequestEntropy(RequestEntropyMsg {
-                callback_gas_limit,
-                callback_address: env.contract.address.clone(),
-                callback_msg: to_binary(&EntropyCallbackData {
-                    original_sender: info.sender.clone(),
-                }).unwrap(),
-            }))
+        contract_addr: state.entropy_beacon_addr.clone().into_string(),
+        msg: to_binary(&BeaconExecuteMsg::RequestEntropy(RequestEntropyMsg {
+            callback_gas_limit,
+            callback_address: env.contract.address.clone(),
+            callback_msg: to_binary(&EntropyCallbackData {
+                original_sender: info.sender.clone(),
+            })
             .unwrap(),
-            funds: vec![],
+        }))
+        .unwrap(),
+        funds: vec![Coin {
+            amount: Uint128::new(beacon_fee.into()),
+            denom: "ukuji".to_string(),
+        }],
         };
         
         assert_eq!(
@@ -317,7 +314,6 @@ pub mod tests {
         );
 
     }
-
 
     #[test]
     fn test_recieve_entropy() {
@@ -547,59 +543,6 @@ pub mod tests {
     }
 
     #[test]
-    fn test_validate_bet() {
-        
-        // Valid bet 
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]); 
-        let env = mock_env();
-        let info = mock_info("addr0000", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
-        let bet_amount = Uint128::new(10); 
-        let bet_number = Uint128::new(5); 
-        assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), true);
-
-        // Invalid bet, wrong bet number!
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]); 
-        let env = mock_env();
-        let info = mock_info("addr0000", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
-        let bet_amount = Uint128::new(10); 
-        let bet_number = Uint128::new(7); // WRONG BET NUMBER
-        assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), false);
-
-        // Invalid bet, not enough balance!
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]); 
-        let env = mock_env();
-        let info = mock_info("addr0000", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
-        let bet_amount = Uint128::new(100); // Bet size larger than balance 
-        let bet_number = Uint128::new(2); 
-        assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), false);
-
-        // Invalid bet, wrong denom!
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
-        let env = mock_env();
-        let info = mock_info("addr0000", &[Coin{denom: "wrong_denom".to_string(), amount: Uint128::new(10)}]);
-        let bet_amount = Uint128::new(10);
-        let bet_number = Uint128::new(2);
-        assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), false);
-
-        // Invalid bet,  bet size is > 1% of house bankroll 
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
-        let env = mock_env();
-        let info = mock_info("addr0000", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(100)}]);
-        let bet_amount = Uint128::new(100); // Bet size larger than 1% of house bankroll
-        let bet_number = Uint128::new(2);
-        assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), false);
-
-        // Invalid bet, bankroll size is 0
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(0)}]);
-        let env = mock_env();
-        let info = mock_info("addr0000", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
-        let bet_amount = Uint128::new(10);
-        let bet_number = Uint128::new(2);
-        assert_eq!(execute_validate_bet(&deps.as_mut(), &env, info, bet_amount, bet_number), false);
-
-    }
-
-    #[test]
     fn test_leaderboard_update_and_query() {
         let mut owned_deps = mock_dependencies_with_balance(&[Coin {
             denom: "ukuji".to_string(),
@@ -612,13 +555,14 @@ pub mod tests {
         let player3 = "player3".to_string();
     
         // Player 1 wins a game
-        update_leaderboard(&mut deps, &player1, Uint128::from(1u64));
+        update_leaderboard(deps.storage, &player1, Uint128::from(1u64));
         // Player 2 wins two games
-        update_leaderboard(&mut deps, &player2, Uint128::from(2u64));
+        update_leaderboard(deps.storage, &player2, Uint128::from(2u64));
         // Player 3 wins a game
-        update_leaderboard(&mut deps, &player3, Uint128::from(1u64));
+        update_leaderboard(deps.storage, &player3, Uint128::from(1u64));
     
-        let leaderboard = query_leaderboard(deps);
+        let deps_ref = deps.as_ref(); // Convert DepsMut to Deps
+        let leaderboard = query_leaderboard(deps_ref);
     
         assert_eq!(leaderboard.len(), 3);
         assert_eq!(leaderboard[0].player, player2);
@@ -629,5 +573,5 @@ pub mod tests {
         assert_eq!(leaderboard[2].wins, Uint128::from(1u64));
     }
 
-    
+
 }

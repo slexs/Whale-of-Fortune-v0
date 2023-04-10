@@ -73,6 +73,9 @@ pub enum ContractError {
     #[error("No Freespins left")]
     NoFreeSpinsLeft {}, 
 
-    #[error("beacon fee error: {beacon_fee}")]
-    BeaconFeeError { beacon_fee: String },
+    #[error("Calculate beacon fee error, 
+    BeaconAddr: {beacon_addr}, 
+    callbackGasLimit: {callback_gas_limit}")]
+    BeaconFeeError { beacon_addr: String, callback_gas_limit: u64},
+
 }

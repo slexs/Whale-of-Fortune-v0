@@ -1,1 +1,1 @@
-f155e70f9b22dcf4dd7513e6c92d731ea80c696ac5ff6f9c398a8af5e9ae6021  whale_of_fortune.wasm
+049dee2a8ab050d4fd24c556ec47e503e532d5298518d0e33b4b7f087fc45da3  whale_of_fortune.wasm

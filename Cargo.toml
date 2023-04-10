@@ -83,6 +83,7 @@ cw20 = "1.0.1"
 cw20-base = "1.0.1"
 wasm = "0.0.0"
 hex = "0.4.3"
+cosmwasm-vm = "1.2.3"
 
 
 [dev-dependencies]

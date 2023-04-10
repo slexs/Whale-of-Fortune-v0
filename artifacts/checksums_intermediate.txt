@@ -1,1 +1,1 @@
-76f2eaba774b56141f970ee9fd8c122fedfeda29bb8265caf712762dc186d7ec  ./target/wasm32-unknown-unknown/release/whale_of_fortune.wasm
+d189e320967c20f72ac41a35f062465fe0b5543d277b17b31d3b2762fbba5da4  ./target/wasm32-unknown-unknown/release/whale_of_fortune.wasm
