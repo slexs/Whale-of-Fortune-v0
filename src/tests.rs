@@ -1,18 +1,23 @@
 #[allow(unused_imports)]
 #[cfg(test)]
 pub mod tests {
-    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance};
-    use cosmwasm_std::{Uint128, Coin, Addr, Response, coins, from_binary, to_binary, WasmMsg, CosmosMsg, DepsMut, MemoryStorage};
+    use std::collections::HashMap;
+    use cosmwasm_std::CosmosMsg::{Bank};
+    use cosmwasm_std::{BankMsg, SubMsg};  
+
+
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance, MockQuerier, MockApi, MockStorage};
+    use cosmwasm_std::{ Uint128, Coin, Addr, Response, coins, from_binary, to_binary, WasmMsg, CosmosMsg, DepsMut, MemoryStorage, Storage, to_vec, Order, Deps, QuerierWrapper, Api, Querier, from_slice, MessageInfo, WasmQuery, Empty, StdError};
     use cw2::{set_contract_version, CONTRACT, get_contract_version};
     use entropy_beacon_cosmos::beacon::RequestEntropyMsg;
     use entropy_beacon_cosmos::provide::ActiveRequestsQuery;
     use entropy_beacon_cosmos::{EntropyRequest, EntropyCallbackMsg, CalculateFeeQuery};
     use entropy_beacon_cosmos::msg::QueryMsg as BeaconQueryMsg;
     use entropy_beacon_cosmos::msg::ExecuteMsg as BeaconExecuteMsg;
-    use crate::contract::{execute, instantiate, query};
-    use crate::helpers::{calculate_payout, get_outcome_from_entropy, update_leaderboard, query_leaderboard, calculate_beacon_fee};
-    use crate::state::{RuleSet, State, Game, PLAYER_HISTORY, PlayerHistory, STATE, IDX, GAME};
-    use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData, QueryMsg, GameResponse};
+    use crate::contract::{execute, instantiate, query, migrate};
+    use crate::helpers::{calculate_payout, get_outcome_from_entropy, update_leaderboard, query_leaderboard, calculate_beacon_fee, update_player_history_win, update_player_history_loss, update_game_state_for_win, validate_bet_number, validate_funds_sent, validate_denom, validate_bet_amount, validate_bet_vs_bankroll, validate_sent_amount_to_cover_fee, get_bankroll_balance, load_player_history_or_create_new, save_game_state, verify_callback_sender, update_game_and_player_history, build_response};
+    use crate::state::{RuleSet, State, Game, PLAYER_HISTORY, PlayerHistory, STATE, IDX, GAME, LatestGameIndexResponse, LeaderBoardEntry};
+    use crate::msg::{ExecuteMsg, InstantiateMsg, EntropyCallbackData, QueryMsg, GameResponse, MigrateMsg};
     use cosmwasm_std::Binary;
     use crate::error::ContractError;
 
@@ -415,6 +420,223 @@ pub mod tests {
     }
 
     #[test]
+    fn test_calculated_payout_outcome_out_of_range() {
+
+        let rule_set =  RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        }; 
+        
+        let calculated_payout = calculate_payout(Uint128::new(1), 7u8, rule_set); 
+
+        assert_eq!(calculated_payout, Uint128::new(0));
+    }
+
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_0() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        };
+    
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+    
+        entropy[0..4].copy_from_slice(&(0 as u32).to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![0]);
+    }
+
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_1() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        };
+    
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+    
+        entropy[0..4].copy_from_slice(&(rule_set.zero.u128() as u32).to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![1]);
+    }
+
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_2() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        };
+    
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+    
+        let sum_01 = (rule_set.zero.u128() + rule_set.one.u128()) as u32;
+        entropy[0..4].copy_from_slice(&sum_01.to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![2]);
+    } 
+    
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_3() {
+        let rule_set =  RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        }; 
+
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+
+        let sum_012 = (rule_set.zero.u128() + rule_set.one.u128() + rule_set.two.u128()) as u32;
+        entropy[0..4].copy_from_slice(&sum_012.to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![3]);
+    }
+
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_4() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        };
+
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+
+        let sum_0123 = (rule_set.zero.u128() + rule_set.one.u128() + rule_set.two.u128() + rule_set.three.u128()) as u32;
+        entropy[0..4].copy_from_slice(&sum_0123.to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![4]);
+    }
+
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_5() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        };
+
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+
+        let sum_01234 = (rule_set.zero.u128() + rule_set.one.u128() + rule_set.two.u128() + rule_set.three.u128() + rule_set.four.u128()) as u32;
+        entropy[0..4].copy_from_slice(&sum_01234.to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![5]);
+    }
+
+    #[test]
+    fn test_get_outcome_from_entropy_outcome_6() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(24),
+            one: Uint128::new(12),
+            two: Uint128::new(8),
+            three: Uint128::new(4),
+            four: Uint128::new(2),
+            five: Uint128::new(1),
+            six: Uint128::new(1),
+        };
+    
+        let mut entropy = vec![0; 64]; // A 64-byte vector
+    
+        let sum_012345 = (rule_set.zero.u128() + rule_set.one.u128() + rule_set.two.u128() + rule_set.three.u128() + rule_set.four.u128() + rule_set.five.u128()) as u32;
+        entropy[0..4].copy_from_slice(&sum_012345.to_be_bytes());
+        let outcome = get_outcome_from_entropy(&entropy, &rule_set);
+        assert_eq!(outcome, vec![6]);
+    }
+
+    #[test]
+    fn test_update_player_history_win() {
+        let mut player_history = PlayerHistory {
+            player_address: "player_address".to_string(),
+            games_played: Uint128::new(4),
+            wins: Uint128::new(2),
+            losses: Uint128::new(2),
+            total_coins_spent: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(40),
+            },
+            total_coins_won: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(25),
+            },
+            free_spins: Uint128::new(0),
+        };
+    
+        let bet_size = Uint128::new(10);
+        let calculated_payout = Uint128::new(15);
+    
+        update_player_history_win(&mut player_history, bet_size, calculated_payout);
+    
+        assert_eq!(player_history.games_played, Uint128::new(5));
+        assert_eq!(player_history.wins, Uint128::new(3));
+        assert_eq!(player_history.losses, Uint128::new(2));
+        assert_eq!(player_history.total_coins_spent.amount, Uint128::new(50));
+        assert_eq!(player_history.total_coins_won.amount, Uint128::new(40));
+        assert_eq!(player_history.free_spins, Uint128::new(1));
+    }
+    
+    #[test]
+    fn test_update_player_history_loss() {
+        let mut player_history = PlayerHistory {
+            player_address:"player".to_string(),
+            games_played: Uint128::new(4),
+            wins: Uint128::new(2),
+            losses: Uint128::new(2),
+            total_coins_spent: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(40),
+            },
+            total_coins_won: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(25),
+            },
+            free_spins: Uint128::new(0),
+        };
+    
+        let bet_size = Uint128::new(10);
+    
+        update_player_history_loss(&mut player_history, bet_size);
+    
+        assert_eq!(player_history.games_played, Uint128::new(5));
+        assert_eq!(player_history.wins, Uint128::new(2));
+        assert_eq!(player_history.losses, Uint128::new(3));
+        assert_eq!(player_history.total_coins_spent.amount, Uint128::new(50));
+        assert_eq!(player_history.total_coins_won.amount, Uint128::new(25));
+        assert_eq!(player_history.free_spins, Uint128::new(1));
+    }
+
+    #[test]
     fn test_recieve_entropy_with_player_history() {
         // Define mock dependencies and environment
         let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
@@ -474,71 +696,6 @@ pub mod tests {
     
         assert_eq!(res.messages.len(), 0);
     }
-
-    /* #[test]
-    fn test_recieve_entropy_err_no_game_player() {
-        // Define mock dependencies and environment
-        let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
-        let info = mock_info("player", &[Coin{denom: "ukuji".to_string(), amount: Uint128::new(10)}]);
-        let env = mock_env();
-        let entropy = vec![1u8; 64];
-
-        let idx = Uint128::zero();
-        IDX.save(&mut deps.storage, &idx).unwrap();
-
-        // let game = Game::new_game(
-        //     &"".to_string(), 
-        //     idx.into(),
-        //     6u128,
-        //     10u128,
-
-        // );
-
-        let player_history = PlayerHistory{
-            player_address: info.sender.to_string(),
-            wins: Uint128::new(1), 
-            losses: Uint128::new(2),
-            games_played: Uint128::new(3),
-            total_coins_spent: Coin{denom: "ukuji".to_string(), amount: Uint128::new(3)},
-            total_coins_won: Coin{denom: "ukuji".to_string(), amount: Uint128::new(1)}, 
-            free_spins: Uint128::zero(),
-        };
-
-        PLAYER_HISTORY.save(&mut deps.storage, info.sender.to_string(), &player_history).unwrap();
-
-        // GAME.save(&mut deps.storage, idx.into(), &game).unwrap();
-
-        let state = State {
-            entropy_beacon_addr: Addr::unchecked("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3"),
-            house_bankroll: Coin {
-                denom: "ukuji".to_string(),
-                amount: Uint128::new(1000),
-            },
-        };
-
-        STATE.save(&mut deps.storage, &state).unwrap();
-
-        let entropy_callback_msg = EntropyCallbackMsg {
-            entropy: vec![1u8; 64],
-            requester: info.sender.clone(),
-            msg: Binary::from(b"arbitrary data".to_vec()),
-        };
-
-        // Call the ReceiveEntropy function
-        let res = execute(
-            deps.as_mut(),
-            env.clone(),
-            mock_info("kujira1pvrwmjuusn9wh34j7y520g8gumuy9xtl3gvprlljfdpwju3x7ucseu6vw3", &[]),
-            ExecuteMsg::ReceiveEntropy(entropy_callback_msg),
-        );
-    
-        assert_eq!(
-            res,
-            Err(ContractError::UnableToLoadPlayerHistory {player_addr: "".to_string()}),
-            "ContractError::UnableToLoadPlayerHistory, got: {:?}",
-            res
-        );
-    } */
 
     #[test]
     fn test_player_history() {
@@ -632,6 +789,10 @@ pub mod tests {
         assert_eq!(calculate_payout(Uint128::new(1), 4, rule_set.clone()), Uint128::new(20));
         assert_eq!(calculate_payout(Uint128::new(1), 5, rule_set.clone()), Uint128::new(45));
         assert_eq!(calculate_payout(Uint128::new(1), 6, rule_set.clone()), Uint128::new(45));
+
+        let payout = calculate_payout(Uint128::new(100), 2, rule_set);
+
+        assert_eq!(payout, Uint128::new(500));
     }
 
     #[test]
@@ -750,6 +911,389 @@ pub mod tests {
     }
 
     #[test]
+    fn test_update_leaderboard_existing_entry() {
+        let mut deps = mock_dependencies();
+        let player1 = "player1".to_string();
+    
+        // Add a new entry to the leaderboard
+        let wins1 = Uint128::new(5);
+        update_leaderboard(&mut deps.storage, &player1, wins1);
+    
+        // Update the existing entry
+        let additional_wins1 = Uint128::new(3);
+        update_leaderboard(&mut deps.storage, &player1, additional_wins1);
+    
+        // Retrieve the leaderboard from storage
+        let leaderboard_key = "leaderboard";
+        let leaderboard: Vec<LeaderBoardEntry> = deps
+            .storage
+            .get(leaderboard_key.as_bytes())
+            .map(|value| from_slice(&value).unwrap())
+            .unwrap_or_else(|| vec![]);
+    
+        // Check if the leaderboard has only one entry and the wins are incremented correctly
+        assert_eq!(leaderboard.len(), 1);
+        assert_eq!(leaderboard[0].player, player1);
+        assert_eq!(leaderboard[0].wins, wins1 + additional_wins1);
+    }
+    
+    #[test]
+    fn test_validate_bet_number_invalid() {
+        let invalid_bet_number = Uint128::new(7);
+        let result = validate_bet_number(invalid_bet_number);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), ContractError::InvalidBetNumber {});
+    }
+
+    #[test]
+    fn test_validate_funds_sent_mismatch() {
+        let coin = Coin {
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(10),
+        };
+        let info = mock_info("player", &[Coin {
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(15),
+        }]);
+        
+        let result = validate_funds_sent(&coin, &info);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            ContractError::ValidateBetFundsSentMismatch {
+                player_sent_amount: coin.amount,
+                bet_amount: info.funds[0].amount,
+            }
+        );
+    }
+    
+    #[test]
+    fn test_validate_denom_mismatch() {
+        let coin = Coin {
+            denom: "player_denom".to_string(),
+            amount: Uint128::new(10),
+        };
+        let bankroll_balance = Coin {
+            denom: "house_denom".to_string(),
+            amount: Uint128::new(1000),
+        };
+        
+        let result = validate_denom(&coin, &bankroll_balance);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            ContractError::ValidateBetDenomMismatch {
+                player_sent_denom: coin.denom.clone(),
+                house_bankroll_denom: bankroll_balance.denom.clone(),
+            }
+        );
+    }
+    
+    #[test]
+    fn test_validate_bet_amount_zero() {
+        let coin = Coin {
+            denom: "player_denom".to_string(),
+            amount: Uint128::new(0),
+        };
+        
+        let result = validate_bet_amount(&coin);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            ContractError::ValidateBetBetAmountIsZero {}
+        );
+    }
+    
+    #[test]
+    fn test_validate_bet_vs_bankroll_exceeds_limit() {
+        let bankroll_balance = Coin {
+            denom: "bankroll_denom".to_string(),
+            amount: Uint128::new(1000),
+        };
+        
+        let player_bet_amount = Uint128::new(11); // Exceeds 1% of the bankroll_balance (1000 * 0.01 = 10)
+        
+        let info = MessageInfo {
+            sender: Addr::unchecked("player"),
+            funds: vec![Coin {
+                denom: "bankroll_denom".to_string(),
+                amount: player_bet_amount,
+            }],
+        };
+    
+        let result = validate_bet_vs_bankroll(&info, &bankroll_balance);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            ContractError::ValidateBetBetAmountExceedsHouseBankrollBalance {
+                player_bet_amount,
+                house_bankroll_balance: bankroll_balance.amount,
+            }
+        );
+    }
+    
+    #[test]
+    fn test_validate_sent_amount_to_cover_fee_insufficient_funds() {
+        let sent_amount = Uint128::new(49);
+        let beacon_fee = 50u64;
+    
+        let result = validate_sent_amount_to_cover_fee(sent_amount, beacon_fee);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), ContractError::InsufficientFunds {});
+    }
+    
+    #[test]
+    fn test_load_player_history_or_create_new_ok_none() {
+        // Set up the environment
+        let api = MockApi::default();
+        let mut storage = MockStorage::default();
+
+        let binding = MockQuerier::default();
+    
+        let querier: QuerierWrapper<Empty> = QuerierWrapper::new(&binding); // Update here
+        let deps: DepsMut<Empty> = DepsMut { // Update here
+            api: &api,
+            storage: &mut storage,
+            querier: querier,
+        };
+    
+        let sender = "player1".to_string();
+    
+        let result = load_player_history_or_create_new(deps.storage, sender.clone());
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            PlayerHistory::new(sender.to_string())
+        );
+    }
+
+    #[test]
+    fn test_verify_callback_sender_caller_error() {
+        let result = verify_callback_sender(&"wrong_caller".to_string(), &"beacon".to_string(), &"requester".to_string(), &"trusted".to_string());
+        assert!(matches!(result, Err(ContractError::CallBackCallerError { .. })));
+    }
+
+    #[test]
+    fn test_verify_callback_sender_requester_error() {
+        let result = verify_callback_sender(&"beacon".to_string(), &"beacon".to_string(), &"wrong_requester".to_string(), &"trusted".to_string());
+        assert!(matches!(result, Err(ContractError::EntropyRequestError { .. })));
+    }
+
+    #[test]
+    fn test_save_game_state() {
+        let mut deps = mock_dependencies_with_balance(&[Coin {
+            denom: "uluna".to_string(),
+            amount: Uint128::new(1000),
+        }]);
+        
+        let rule_set = RuleSet {
+            zero: Uint128::new(1),
+            one: Uint128::new(3),
+            two: Uint128::new(5),
+            three: Uint128::new(10),
+            four: Uint128::new(20),
+            five: Uint128::new(45),
+            six: Uint128::new(45),
+        };
+        let game = Game {
+            player: "player1".to_string(),
+            game_idx: 1,
+            bet_number: 5,
+            bet_size: 100,
+            outcome: "win".to_string(),
+            played: true,
+            win: true,
+            payout: Coin {
+                denom: "uluna".to_string(),
+                amount: Uint128::from(200_u128),
+            },
+            rule_set: rule_set,
+        };
+        let idx = 1_u128;
+        save_game_state(&mut deps.storage, idx, &game).unwrap();
+        let loaded_game: Game = GAME.load(&deps.storage, idx).unwrap();
+        assert_eq!(game, loaded_game);
+    }
+
+    #[test]
+    fn test_update_game_and_player_history_win() {
+        let rule_set = RuleSet {
+            zero: Uint128::new(1),
+            one: Uint128::new(3),
+            two: Uint128::new(5),
+            three: Uint128::new(10),
+            four: Uint128::new(20),
+            five: Uint128::new(45),
+            six: Uint128::new(45),
+        };
+    
+        let game = Game {
+            player: "player1".to_string(),
+            game_idx: 1,
+            bet_number: 5,
+            bet_size: 100,
+            outcome: "win".to_string(),
+            played: true,
+            win: true,
+            payout: Coin {
+                denom: "uluna".to_string(),
+                amount: Uint128::new(0),
+            },
+            rule_set: rule_set.clone(),
+        };
+    
+        let mut player_history = PlayerHistory {
+            player_address: "player1".to_string(),
+            games_played: Uint128::new(0),
+            wins: Uint128::new(0),
+            losses: Uint128::new(0),
+            total_coins_spent: Coin {
+                denom: "uluna".to_string(),
+                amount: Uint128::new(0),
+            },
+            total_coins_won: Coin {
+                denom: "uluna".to_string(),
+                amount: Uint128::new(0),
+            },
+            free_spins: Uint128::new(0),
+        };
+    
+        let outcome = vec![2];
+        let (updated_game, calculated_payout) =
+            update_game_and_player_history(true, &game, &mut player_history, &outcome);
+    
+        assert_eq!(updated_game.payout.amount, calculated_payout);
+        assert_eq!(
+            player_history.total_coins_spent.amount,
+            Uint128::from(game.bet_size.clone())
+        );
+        assert_eq!(player_history.total_coins_won.amount, calculated_payout);
+        assert_eq!(player_history.games_played, Uint128::new(1));
+        assert_eq!(player_history.wins, Uint128::new(1));
+        assert_eq!(player_history.losses, Uint128::new(0));
+    }
+
+    #[test]
+    fn test_update_game_state_for_win() {
+        
+        let rule_set= RuleSet {
+            zero: Uint128::new(1),
+            one: Uint128::new(3),
+            two: Uint128::new(5),
+            three: Uint128::new(10),
+            four: Uint128::new(20),
+            five: Uint128::new(45),
+            six: Uint128::new(45),
+        }; 
+
+        let game = Game {
+            player: "player1".to_string(),
+            game_idx: 1u128,
+            win: false,
+            played: false,
+            outcome: "".to_string(),
+            bet_size: 10u128,
+            bet_number: 1u128,
+            payout: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(0),
+            },
+            rule_set
+        };
+
+        let outcome = vec![2u8];
+        let payout_amount = Uint128::new(50);
+
+        let updated_game = update_game_state_for_win(game, &outcome, payout_amount);
+
+        assert_eq!(updated_game.game_idx, 1u128);
+        assert_eq!(updated_game.player, "player1");
+        assert_eq!(updated_game.win, true);
+        assert_eq!(updated_game.played, true);
+        assert_eq!(updated_game.outcome, "2");
+        assert_eq!(updated_game.bet_size, 10u128);
+        assert_eq!(updated_game.payout.amount, Uint128::new(50));
+    }
+
+    #[test]
+    fn test_build_response() {
+        let game = Game {
+            player: "player1".to_string(),
+            game_idx: 1,
+            bet_number: 5,
+            bet_size: 100,
+            outcome: "win".to_string(),
+            played: true,
+            win: true,
+            payout: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::from(200_u128),
+            },
+            rule_set: RuleSet {
+                zero: Uint128::new(1),
+                one: Uint128::new(3),
+                two: Uint128::new(5),
+                three: Uint128::new(10),
+                four: Uint128::new(20),
+                five: Uint128::new(45),
+                six: Uint128::new(45),
+            },
+        };
+        let payout = Uint128::from(200_u128);
+        let response = build_response(true, &game, payout.clone());
+    
+        assert_eq!(
+            response.messages,
+            vec![SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+                to_address: "player1".to_string(),
+                amount: vec![Coin {
+                    denom: "ukuji".to_string(),
+                    amount: Uint128::from(200_u128)
+                }]
+            }))]
+        );
+        assert_eq!(response.attributes.len(), 3);
+        assert_eq!(
+            response.attributes[0],
+            ("game_result".to_string(), "true".to_string())
+        );
+        assert_eq!(
+            response.attributes[1],
+            ("game_outcome".to_string(), "win".to_string())
+        );
+        assert_eq!(
+            response.attributes[2],
+            ("game_payout".to_string(), payout.to_string())
+        );
+    }
+    
+    #[test]
+    fn test_update_leaderboard() {
+        let mut deps = mock_dependencies_with_balance(&[Coin {
+            denom: "uluna".to_string(),
+            amount: Uint128::new(1000),
+        }]);
+    
+        let player_address = "player1".to_string();
+        let initial_wins = Uint128::new(0);
+    
+        let mut leaderboard = query_leaderboard(deps.as_ref());
+        assert!(leaderboard.is_empty());
+    
+        update_leaderboard(deps.as_mut().storage, &player_address, Uint128::new(1));
+        leaderboard = query_leaderboard(deps.as_ref());
+        assert_eq!(leaderboard.len(), 1);
+        assert_eq!(leaderboard[0].player, player_address);
+        assert_eq!(leaderboard[0].wins, initial_wins + Uint128::new(1));
+    
+        update_leaderboard(deps.as_mut().storage, &player_address, Uint128::new(2));
+        leaderboard = query_leaderboard(deps.as_ref());
+        assert_eq!(leaderboard.len(), 1);
+        assert_eq!(leaderboard[0].player, player_address);
+        assert_eq!(leaderboard[0].wins, initial_wins + Uint128::new(3));
+    }
+    
+    #[test]
     fn test_query_game() {
         // Define mock dependencies and environment
         let mut deps = mock_dependencies_with_balance(&[Coin{denom: "ukuji".to_string(), amount: Uint128::new(1000)}]);
@@ -808,7 +1352,7 @@ pub mod tests {
         assert_eq!(game_response.win, game.win);
         assert_eq!(game_response.payout, game.payout);
     }
-    
+
     #[test]
     fn test_query_player_history() {
         // Define mock dependencies and environment
@@ -843,5 +1387,209 @@ pub mod tests {
         assert_eq!(player_history_response.free_spins, player_history.free_spins);
     }
 
+    #[test]
+    fn test_query_latest_game_index() {
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin { denom: "ukuji".to_string(), amount: Uint128::new(1000) }]);
+        let env = mock_env();
 
+        // Set up the game index state and save it in storage
+        let idx = Uint128::new(5);
+        IDX.save(&mut deps.storage, &idx).unwrap();
+
+        // Call the query function for QueryMsg::LatestGameIndex
+        let query_msg = QueryMsg::LatestGameIndex {};
+        let res = query(deps.as_ref(), env, query_msg).unwrap();
+        let latest_game_index_response: LatestGameIndexResponse = from_binary(&res).unwrap();
+
+        // Assert expected game index response value
+        let expected_latest_game_index = idx - Uint128::new(1);
+        assert_eq!(latest_game_index_response.idx, expected_latest_game_index);
+    }
+
+    #[test]
+    fn test_query_latest_game_index_unable_to_load() {
+        // Custom storage that always returns None when queried
+        struct NoneStorage<'a> {
+            storage: &'a mut dyn Storage,
+        }
+    
+        impl<'a> Storage for NoneStorage<'a> {
+            fn get(&self, _key: &[u8]) -> Option<Vec<u8>> {
+                // Return None for any key
+                None
+            }
+        
+            fn set(&mut self, key: &[u8], value: &[u8]) {
+                self.storage.set(key, value)
+            }
+        
+            fn remove(&mut self, key: &[u8]) {
+                self.storage.remove(key)
+            }
+        
+            fn range<'b>(&'b self, start: Option<&[u8]>, end: Option<&[u8]>, order: Order) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + 'b> {
+                self.storage.range(start, end, order)
+            }
+        }
+    
+        // Define mock dependencies and environment
+        let mut deps = mock_dependencies_with_balance(&[Coin { denom: "ukuji".to_string(), amount: Uint128::new(1000) }]);
+        let env = mock_env();
+    
+        // Replace storage with custom storage that always returns None
+        let mut none_storage = NoneStorage { storage: &mut deps.storage };
+    
+        // Call the query function for QueryMsg::LatestGameIndex and expect a ContractError
+        let query_msg = QueryMsg::LatestGameIndex {};
+        let res = query(deps.as_ref(), env, query_msg);
+    
+        match res {
+            Err(ContractError::UnableToLoadGameIndex { .. }) => (), // Expected error
+            _ => panic!("Expected a ContractError::UnableToLoadGameIndex"),
+        }
+    }
+
+    #[test]
+    fn test_migrate() {
+        // Create a test environment and mutable dependencies
+        let mut deps = mock_dependencies();
+    
+        // Call the migrate function and check that the response contains the expected attributes
+        let migrate_msg = MigrateMsg {};
+        let response = migrate(deps.as_mut(), mock_env(), migrate_msg).unwrap();
+    
+        assert_eq!(response.attributes.len(), 1);
+        assert_eq!(
+            response.attributes[0],
+            ("action".to_string(), "migrate".to_string())
+        );
+    }
+
+    #[test]
+    fn test_query_leaderboard() {
+    // Define mock dependencies and environment
+    let mut deps = mock_dependencies_with_balance(&[Coin { denom: "ukuji".to_string(), amount: Uint128::new(1000) }]);
+    let env = mock_env();
+
+    let rule_set = RuleSet {
+        zero: Uint128::new(1),
+        one: Uint128::new(3),
+        two: Uint128::new(5),
+        three: Uint128::new(10),
+        four: Uint128::new(20),
+        five: Uint128::new(45),
+        six: Uint128::new(45),
+    }; 
+
+    // Set up initial game states and save them in storage
+    let games = vec![
+    Game {
+        player: "player1".to_string(),
+        game_idx: 1,
+        bet_number: Uint128::new(3).into(),
+        bet_size: Uint128::new(10).into(),
+        outcome: "Win".to_string(),
+        played: true,
+        win: true,
+        payout: Coin {
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(50),
+        },
+        rule_set: rule_set.clone()
+    },
+    Game {
+        player: "player2".to_string(),
+        game_idx: 2,
+        bet_number: Uint128::new(3).into(),
+        bet_size: Uint128::new(10).into(),
+        outcome: "Win".to_string(),
+        played: true,
+        win: true,
+        payout: Coin {
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(100),
+        },
+        rule_set: rule_set.clone()
+    },
+    Game {
+        player: "player3".to_string(),
+        game_idx: 3,
+        bet_number: Uint128::new(3).into(),
+        bet_size: Uint128::new(10).into(),
+        outcome: "Win".to_string(),
+        played: true,
+        win: true,
+        payout: Coin {
+            denom: "ukuji".to_string(),
+            amount: Uint128::new(200),
+        },
+        rule_set: rule_set.clone()
+    },
+    ];
+
+
+    for game in games {
+        let game_key = game.game_idx.to_be_bytes();
+        GAME.save(&mut deps.storage, game.game_idx, &game).unwrap();
+    }
+
+    // Create leaderboard entries and save them in storage
+    let leaderboard_key = "leaderboard";
+    let leaderboard_entries = vec![
+        LeaderBoardEntry { player: "player1".to_string(), wins: Uint128::new(3) },
+        LeaderBoardEntry { player: "player2".to_string(), wins: Uint128::new(2) },
+        LeaderBoardEntry { player: "player3".to_string(), wins: Uint128::new(1) },
+    ];
+
+    deps.storage.set(
+        leaderboard_key.as_bytes(),
+        &to_vec(&leaderboard_entries).unwrap(),
+    );
+
+    // Call the query function for QueryMsg::LeaderBoard
+    let query_msg = QueryMsg::LeaderBoard {};
+    let res = query(deps.as_ref(), env, query_msg).unwrap();
+    let leaderboard_response: Vec<LeaderBoardEntry> = from_binary(&res).unwrap();
+
+    // Assert expected leaderboard response values
+    assert_eq!(leaderboard_response.len(), leaderboard_entries.len());
+    for (i, entry) in leaderboard_response.iter().enumerate() {
+        assert_eq!(entry.player, leaderboard_entries[i].player);
+        assert_eq!(entry.wins, leaderboard_entries[i].wins);
+    }
+
+    }
+
+    // STATE TESTS 
+    #[test]
+    fn test_is_winner_with_empty_outcome() {
+        let game = Game::new_game("player1", 1, 5, 100);
+        let result = game.is_winner(Uint128::new(5), vec![]);
+        assert_eq!(result, false);
+    }
+
+    #[test]
+    fn test_player_history_display() {
+        let player_history = PlayerHistory {
+            player_address: "player1".to_string(),
+            games_played: Uint128::new(10),
+            wins: Uint128::new(5),
+            losses: Uint128::new(5),
+            total_coins_spent: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(100),
+            },
+            total_coins_won: Coin {
+                denom: "ukuji".to_string(),
+                amount: Uint128::new(50),
+            },
+            free_spins: Uint128::new(2),
+        };
+
+        let result = format!("{}", player_history);
+
+        let expected = "player_address: player1, games_played: 10, wins: 5, losses: 5, total_coins_spent: (100 ukuji), total_coins_won: (50 ukuji), free_spins: 2";
+        assert_eq!(result, expected);
+    }
 }

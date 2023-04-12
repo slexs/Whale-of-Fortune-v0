@@ -286,7 +286,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> Result<Binary, ContractErr
     
         QueryMsg::LeaderBoard {  } => {
             let leaderboard = query_leaderboard(deps);
-            Ok(to_binary(&leaderboard)?) 
+            to_binary(&leaderboard).map_err(|e| ContractError::QueryError(format!("Serialization error: {}", e)))
         }
     }
 }
