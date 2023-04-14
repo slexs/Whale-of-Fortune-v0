@@ -1,7 +1,7 @@
+use crate::state::{LatestGameIndexResponse, LeaderBoardEntry, PlayerHistory};
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Uint128, Coin};
+use cosmwasm_std::{Addr, Coin, Uint128};
 use entropy_beacon_cosmos::EntropyCallbackMsg;
-use crate::state::{PlayerHistory, LatestGameIndexResponse, LeaderBoardEntry};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -18,6 +18,8 @@ pub enum ExecuteMsg {
     Spin { bet_number: Uint128 },
     FreeSpin { bet_number: Uint128 },
     ReceiveEntropy(EntropyCallbackMsg),
+    AdminExecuteChangeEntropyAddr { new_addr: Addr },
+    AdminExecuteChangeFreeSpinThreshold { new_threshold: Uint128 },
 }
 
 #[cw_serde]
@@ -30,7 +32,7 @@ pub enum QueryMsg {
     PlayerHistory { player_addr: Addr },
 
     #[returns(LatestGameIndexResponse)]
-    LatestGameIndex {}, 
+    LatestGameIndex {},
 
     #[returns(Vec<LeaderBoardEntry>)] // Modify return type according to the new struct
     LeaderBoard {},
@@ -42,13 +44,11 @@ pub struct GameResponse {
     pub player: String,
     pub bet_number: Uint128,
     pub bet_size: Uint128,
-    pub played: bool, 
+    pub played: bool,
     pub payout: Coin,
     pub game_outcome: String,
-    pub win: bool, 
+    pub win: bool,
 }
-
-
 
 #[cw_serde]
 pub struct MigrateMsg {}

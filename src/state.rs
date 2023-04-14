@@ -1,15 +1,17 @@
 use std::fmt;
 
 use cosmwasm_schema::cw_serde;
-use cw_storage_plus::Map;
 use cosmwasm_std::{Addr, Coin, Uint128};
 use cw_storage_plus::Item;
+use cw_storage_plus::Map;
 
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
 pub struct State {
     pub entropy_beacon_addr: Addr,
     pub house_bankroll: Coin,
+    pub admin: Addr,
+    pub free_spin_threshold: Uint128,
 }
 
 #[cw_serde]
@@ -22,22 +24,21 @@ pub struct Game {
     pub outcome: String,
     pub played: bool,
     pub win: bool,
-    pub payout: Coin, 
+    pub payout: Coin,
     pub rule_set: RuleSet,
 }
 
 impl Game {
     pub fn is_winner(&self, player_bet: Uint128, outcome: Vec<u8>) -> bool {
-
-        // Check that outcome is not empty 
+        // Check that outcome is not empty
         if outcome.is_empty() {
-            return false; 
+            return false;
         }
 
         // Get the first byte of the outcome as a u128 value
         let outcome_value = u128::from(outcome[0]);
 
-        // Compare the player_bet Uint128 to the outcome_value 
+        // Compare the player_bet Uint128 to the outcome_value
         player_bet.u128() == outcome_value
     }
 
@@ -64,10 +65,8 @@ impl Game {
                 six: Uint128::new(45),
             },
         }
-    }    
+    }
 }
-
-
 
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
@@ -75,24 +74,18 @@ pub struct PlayerHistory {
     pub player_address: String,
     pub games_played: Uint128,
     pub wins: Uint128,
-    pub losses: Uint128, 
-    pub total_coins_spent: Coin, 
+    pub losses: Uint128,
+    pub total_coins_spent: Coin,
     pub total_coins_won: Coin,
     pub free_spins: Uint128,
 }
-
-// #[cw_serde]
-// #[serde(rename_all = "snake_case")]
-// pub struct Leaderboard {
-//     pub player_address: String,
-//     pub wins: u64,
-// }
 
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
 pub struct LatestGameIndexResponse {
     pub idx: Uint128,
 }
+
 
 impl PlayerHistory {
     pub fn new(player_address: String) -> Self {
@@ -127,7 +120,7 @@ impl fmt::Display for PlayerHistory {
             self.total_coins_spent.denom,
             self.total_coins_won.amount,
             self.total_coins_won.denom,
-            self.free_spins, 
+            self.free_spins,
         )
     }
 }
@@ -135,8 +128,8 @@ impl fmt::Display for PlayerHistory {
 #[cw_serde]
 #[serde(rename_all = "snake_case")]
 pub struct LeaderBoardEntry {
-    pub player: String, 
-    pub wins: Uint128, 
+    pub player: String,
+    pub wins: Uint128,
 }
 
 #[cw_serde]

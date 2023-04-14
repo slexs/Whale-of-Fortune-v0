@@ -16,8 +16,8 @@ mod tests {
             ("cosmos2contract", &coins(100000000, "ukuji")),
         ]);
 
-        let env = mock_env(); 
-        
+        let env = mock_env();
+
         let instantiate_msg = InstantiateMsg {
             entropy_beacon_addr: Addr::unchecked("entropyaddr".to_string()),
         };
@@ -29,8 +29,8 @@ mod tests {
         let res = instantiate(deps.as_mut(), mock_env(), init_info, instantiate_msg).unwrap();
         assert_eq!(0, res.messages.len());
 
-        
-        
+
+
 
         // Execute the contract
         let execute_info = mock_info(creator, &coins(2000, "ukuji"));
@@ -39,22 +39,22 @@ mod tests {
 
         let idx = IDX.load(deps.as_ref().storage).unwrap();
         let game = GAME.load(deps.as_ref().storage, idx.into()).unwrap();
-        
+
         // Check the expected results
         // 1. Query the contract state to get the total bet amount
-        
-        let total_bet_amount: Uint128 = game.bet_size.into(); 
+
+        let total_bet_amount: Uint128 = game.bet_size.into();
         assert_eq!(total_bet_amount, Uint128::new(2000));
 
         // 2. Check if the event was emitted with the expected values
-    
+
         let bet_amount_event = execute_res
             .attributes
             .iter()
             .find(|attr| attr.key == "bet_amount" && attr.value == "2000")
             .expect("bet_amount event not found");
 
-        
+
 
         }
 }
